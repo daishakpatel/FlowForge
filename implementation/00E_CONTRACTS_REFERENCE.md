@@ -302,6 +302,9 @@ Election tick 10 × 100 ms = 1 s heartbeat tick 1 (100 ms); `PreVote` and `Check
 | `FF_AI_URL`, `FF_AI_TOKEN` | `http://ai-ops:8000` | worker |
 | `AI_*` (Python: `AI_LLM_PROVIDER=mock|…`, `AI_EMBED_PROVIDER`, `AI_FLOWFORGE_URL`, `AI_FLOWFORGE_TOKEN`, `AI_PROM_URL`, `AI_DB_URL`) | — | ai-ops |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://otel-collector:4317` | all |
+| `FF_DEV_PG_PORT` / `FF_DEV_MD_PORT` | `5432` / `5433` | `docker-compose.yml` host ports (local dev only) |
+| `FF_TEST_PG_DSN` / `FF_TEST_MD_DSN` | unset (start containers) | `internal/testutil`: admin DSN (URL form) of an existing server (tests only) |
+| `FF_TEST_REQUIRE_DOCKER` | unset (skip without Docker) | `internal/testutil`: fail instead of skip when containers can't start (tests only; CI sets it) |
 
 Config precedence: defaults < config file (optional `FF_CONFIG_FILE`) < env. Secrets never logged (§ redaction).
 

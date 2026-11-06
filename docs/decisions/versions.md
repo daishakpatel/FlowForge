@@ -13,3 +13,8 @@ The one place agents record the versions they choose (`00C` §2.6, §10.3). Add 
 | actions/upload-artifact | v7.0.2 (`cf430e030ddbb5b0abf93d22962f4752f3646cd9`) | 2026-11-05 | 01.01 | Uploads `coverage.out`. |
 | actionlint | 1.7.12 | 2026-11-05 | 01.01 | Local workflow validation only; not run in CI. |
 | shellcheck | 0.11.0 | 2026-11-05 | 01.01 | Local script validation only; not run in CI. |
+| Image `pgvector/pgvector` | `0.8.7-pg16` | 2026-11-06 | 01.02 | Compose `postgres` and `internal/testutil` (`pgImage`); keep both in step. PostgreSQL 16 + pgvector 0.8.7. |
+| Image `timescale/timescaledb` | `2.31.0-pg16` | 2026-11-06 | 01.02 | Compose `timescaledb` and `internal/testutil` (`tsImage`); keep both in step. Telemetry off in Compose. |
+| `github.com/testcontainers/testcontainers-go` (+ `modules/postgres`) | v0.45.0 | 2026-11-06 | 01.02 | MIT. Starts throwaway database containers; pulls `testcontainers/ryuk:0.14.0` to clean them up. |
+| `github.com/jackc/pgx/v5` | v5.12.0 | 2026-11-06 | 01.02 | MIT. Used by `internal/testutil` for admin connections; 02.03 uses it for the app. |
+| `go.uber.org/goleak` | v1.3.0 | 2026-11-06 | 01.02 | MIT. `testutil.LeakCheck`. |
