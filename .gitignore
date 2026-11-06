@@ -1,0 +1,15 @@
+# Build and test output
+/bin/
+coverage.out
+*.test
+*.prof
+
+# Local environment (real values never committed; see .env.example from 01.03)
+.env
+.env.*
+!.env.example
+
+# OS and editor files
+.DS_Store
+.idea/
+.vscode/
