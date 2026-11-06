@@ -6,10 +6,12 @@ A distributed workflow runtime and AI operations platform: a Go control plane wi
 
 ```bash
 git clone https://github.com/daishakpatel/FlowForge.git && cd FlowForge
-make lint test
+make lint test          # needs Go and golangci-lint
+make dev-up             # local Postgres (flowforge, aiops) and TimescaleDB (marketdata); needs Docker
+make test-integration   # integration tests against real databases
 ```
 
-Toolchain requirements are in [`docs/development.md`](docs/development.md); `make help` lists every target. Licensed under MIT.
+Toolchain requirements, ports, profiles and troubleshooting are in [`docs/development.md`](docs/development.md); `make help` lists every target. Licensed under MIT.
 
 ## Implementation blueprint
 

@@ -1,0 +1,47 @@
+# Local development stack (task 01.02). Credentials are dev-only constants (00C §10.4).
+# Profiles: core = postgres; streaming = timescaledb (Kafka joins in 05.01); ai = postgres for aiops;
+# raft, ui and obs are reserved for later tasks; full = everything. Map: docs/development.md.
+# Image tags are pinned; keep them in step with internal/testutil and docs/decisions/versions.md.
+name: flowforge
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.7-pg16
+    profiles: [core, ai, full]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "127.0.0.1:${FF_DEV_PG_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./deploy/docker/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # TCP, not the socket: the image's temporary init server listens on the socket only,
+      # so this passes only once init scripts have finished and the real server is up.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d flowforge"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  timescaledb:
+    image: timescale/timescaledb:2.31.0-pg16
+    profiles: [streaming, full]
+    environment:
+      POSTGRES_USER: md
+      POSTGRES_PASSWORD: md
+      POSTGRES_DB: marketdata
+      TIMESCALEDB_TELEMETRY: "off"
+    ports:
+      - "127.0.0.1:${FF_DEV_MD_PORT:-5433}:5432"
+    volumes:
+      - mddata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U md -d marketdata"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  pgdata:
+  mddata:
