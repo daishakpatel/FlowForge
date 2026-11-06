@@ -2,7 +2,7 @@
 
 You are one of several AI coding agents building FlowForge incrementally. You may have no memory of earlier work. Everything you need is in the repository and in these documents.
 
-Sections 1–6 are the procedure every task follows. Sections 7–14 are the conventions the code and the PR must meet. Rules written as **MUST** or **never** have no judgment exception. Rules written as **SHOULD** may be departed from, with a one-line reason in the PR.
+Sections 1–6 are the procedure every task follows. Sections 7–14 are the conventions every change must meet. Rules written as **MUST** or **never** have no judgment exception. Rules written as **SHOULD** may be departed from, with a one-line reason in the completion report.
 
 ## 1. Mandatory reading order (before writing any code)
 
@@ -47,7 +47,7 @@ If a predecessor's completion report is missing, **stop** and report `BLOCKED: p
 A task is complete when all of these hold:
 
 - Every *Acceptance Criteria* checkbox is true and backed by evidence: a test name, command output or file path. A criterion without evidence is not met.
-- The tests are green: `make lint test`, plus `make test-integration` when the task touches Postgres, Kafka, Raft or the AI service, plus the task-specific commands. They run from a clean checkout of your branch.
+- The tests are green: `make lint test`, plus `make test-integration` when the task touches Postgres, Kafka, Raft or the AI service, plus the task-specific commands. They pass in the working tree with your changes in place.
 - No unrelated files changed, no code is commented out, and every `TODO` references an issue.
 - The documentation is updated (§13).
 - The completion report is written to `docs/implementation-reports/<TASK_ID>.md` using `00F_COMPLETION_REPORT_TEMPLATE.md`.
@@ -60,7 +60,7 @@ The report starts with a status line: `COMPLETE`, `COMPLETE_WITH_DEVIATIONS`, `P
 
 If you cannot finish:
 
-- Leave the branch unbroken and commit only work that is green.
+- Leave the working tree building and green: keep the work that passes, and take out what doesn't.
 - Write a `PARTIAL` or `BLOCKED` report. It states what is done, what is not, the exact blocker, what you tried, the smallest decision or input needed, and your recommended path.
 - Downstream tasks stay unstarted.
 
@@ -72,6 +72,7 @@ The next agent relies on your report's **Handoff** section. State precisely: int
 - **How to verify** your work, in one or two commands (with the Compose profile, if one is needed).
 - **Gotchas:** non-obvious ordering requirements, quirks in the test harness, flaky areas, performance cliffs.
 - **Shared resources touched**, if the task has parallel peers in `00B` §5: shared files, migration numbers and Compose services, so the peer can rebase cleanly.
+- **Suggested commits** (§7): each with its files and message, in the order they should be made.
 
 ## 5. Escalation
 
@@ -94,7 +95,9 @@ Small functions; explicit error wrapping (`fmt.Errorf("…: %w", err)`); context
 
 ## 7. Git workflow
 
-- **Branch:** each task gets one branch, `task/NN.NN-short-slug`, and one PR, branched from the latest base that contains all of the task's dependencies.
+- **Branch:** work on the current branch (normally `develop`) and create no branches.
+- **The human owns git history:** agents never run `git commit`, `git push`, `git stash`, `git reset` or history rewrites, and never open or merge PRs. Leave every change uncommitted in the working tree.
+- **Suggested commits:** in the report's *Handoff* (§4), list how to split the change into commits. Give each one its files and a message in the format below.
 - **Commit format** (Conventional Commits, with the task ID as the scope):
 
   ```text
@@ -106,12 +109,9 @@ Small functions; explicit error wrapping (`fmt.Errorf("…: %w", err)`); context
   ```
 
   Types are `feat`, `fix`, `test`, `docs`, `refactor`, `perf`, `build`, `ci` and `chore`. Any change to a public contract needs a `BREAKING CHANGE:` footer.
-- **Commit size:** commits are small, and each one builds and passes tests. Use separate commits for migrations, generated code (with the generating command in the message), implementation, tests and docs when practical.
-- **Scope:** refactors, formatting sweeps, dependency bumps and mass renames go in their own behavior-neutral PRs.
-- **History:** never force-push to `main` or rewrite history others have pulled. Rebase your own branch freely until review starts, then add commits instead.
-- **Never commit** secrets, `.env` files with real values, large binaries, build output or coverage files.
-- **PR body:** the task ID and title; the requirements covered; a summary; the deviations (or "none"); migrations added; new env vars, metrics, routes, events or topics; test commands and results; a link to the completion report.
-- **Merging:** needs green CI, an approved review, a branch up to date with its base, the report committed and `00B` updated. Squash-merge only if the squashed message keeps the commit format; otherwise rebase-merge.
+- **Commit size:** suggested commits are small, and each one should build and pass tests on its own. Suggest separate commits for migrations, generated code (with the generating command in the message), implementation, tests and docs when practical.
+- **Scope:** refactors, formatting sweeps, dependency bumps and mass renames belong to their own behavior-neutral task, not a feature task.
+- **Keep out of the tree:** secrets, `.env` files with real values, large binaries, build output and coverage files. Make sure `.gitignore` covers anything the task generates.
 
 ## 8. Go conventions
 
@@ -187,8 +187,8 @@ Small functions; explicit error wrapping (`fmt.Errorf("…: %w", err)`); context
   - Python: FastAPI, Pydantic v2, LangChain, LangGraph, SQLAlchemy/psycopg, pgvector
   - Frontend: React, Vite, TypeScript, TanStack Query, React Flow, Vitest, Playwright
 - **Pin everything:** `go.sum`, the Python lockfile, `package-lock.json`, image tags (digests for releases) and CI tool versions. Record them in `docs/decisions/versions.md`.
-- **Add dependencies** only in the task that needs them, and do upgrades in their own PR. Commit the result of `go mod tidy`, and install developer tools through the pinned mechanism from 01.01.
-- **CI scans** (`govulncheck`, `pip-audit`, `npm audit` at high and above, `gitleaks`, `trivy`) block the PR unless the finding is on the expiring allowlist with an owner.
+- **Add dependencies** only in the task that needs them, and do upgrades as their own task. Include the result of `go mod tidy` in the change, and install developer tools through the pinned mechanism from 01.01.
+- **CI scans** (`govulncheck`, `pip-audit`, `npm audit` at high and above, `gitleaks`, `trivy`) block the merge unless the finding is on the expiring allowlist with an owner.
 
 ### 10.4 Security
 
@@ -221,7 +221,7 @@ Small functions; explicit error wrapping (`fmt.Errorf("…: %w", err)`); context
 - **Stress:** race-prone code gets a stress run (`-count=20` with varied `GOMAXPROCS`), and the command goes in the report.
 - **Failure paths:** for every external dependency you touch, test that it is unavailable, slow and returning errors. The expected behavior comes from master spec §6.2.
 - **Fixtures:** fixtures live in `testdata/`. Golden files are regenerated only with `-update` and reviewed in the diff. Extend the shared helpers (`testutil`, `kafkatest`, `nodetest`) compatibly instead of re-implementing them.
-- **Existing tests are protected:** never delete, skip, loosen or rewrite one to make your change pass. If your task changes the behavior a test encodes, change the test in its own commit and explain it in the report.
+- **Existing tests are protected:** never delete, skip, loosen or rewrite one to make your change pass. If your task changes the behavior a test encodes, change the test as its own suggested commit and explain it in the report.
 
 ## 12. Working with existing code
 
@@ -230,13 +230,13 @@ Small functions; explicit error wrapping (`fmt.Errorf("…: %w", err)`); context
 - **Preserve public surfaces:** keep exported signatures, interface methods, JSON and proto fields, config keys, metric names and CLI flags. Changing one is a §2.4 change.
 - **Use the seams:** integrate through the ones earlier tasks expose (`LeaseProvider`, `Gate`, `OutcomeHandler`, `CancelSource`, `InputResolver`, `Publisher`, `WindowSink`, `Applier`, `EpochFence`) rather than reaching into internals.
 - **Generated and vendored code** changes only by regenerating it.
-- **Destructive actions stay inside your own branch and workspace:** no `git reset --hard`, `git clean -fd`, deleting directories, or dropping databases and volumes that others use. `make dev-reset` on your own machine is fine.
-- **Bugs in earlier work:** add a failing test, make the minimal fix in a separate commit that references the owning task, and report it under *Defects found in earlier tasks*. If the fix isn't minimal, escalate.
+- **Destructive actions stay inside your own workspace:** no `git reset --hard`, `git clean -fd`, deleting directories, or dropping databases and volumes that others use. `make dev-reset` on your own machine is fine.
+- **Bugs in earlier work:** add a failing test, make the minimal fix as a separate suggested commit that references the owning task, and report it under *Defects found in earlier tasks*. If the fix isn't minimal, escalate.
 - **Temporary stubs and fakes** are clearly marked, listed in the report, and replaced by the task that owns the real implementation.
 
 ## 13. Documentation
 
-| You changed… | Update in the same PR |
+| You changed… | Update in the same change |
 |---|---|
 | REST or internal API | OpenAPI spec, generated client, `docs/api/*`, contract tests |
 | Proto | `.proto`, generated code, docs |
