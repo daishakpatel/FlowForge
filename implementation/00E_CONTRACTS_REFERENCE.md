@@ -6,7 +6,7 @@ Single source of truth for names, schemas, enums and wire contracts. **Tasks mus
 
 ## 1. Conventions
 
-- Go module path placeholder: `github.com/example/flowforge` (record the real one in `docs/decisions/versions.md` if changed).
+- Go module path: `github.com/daishakpatel/flowforge`.
 - IDs: ULID with prefix. DB columns are `text` holding the prefixed form (`run_01J…`) unless stated; generated in Go (`internal/ids`). Worker/attempt/fencing integers are `bigint`.
 - Time: `timestamptz`, UTC, microsecond precision. Go code takes a `clock.Clock` interface (real + fake).
 - JSON field naming: `snake_case`. Enum values: UPPER_SNAKE for states; lower_snake for event types (`task.attempt.failed`).
@@ -370,7 +370,7 @@ Pagination: `?limit=50&cursor=<opaque>` → `{items:[…], next_cursor}`.
 ## 10. AI service REST (`/ai/v1`)
 `POST /investigations` `{investigation_id?, question, run_id?, workflow_name?, time_range?, requested_by}` → 202 `{investigation_id,status}` (idempotent by id); `GET /investigations/{id}` → status + result; `POST /knowledge/ingest` `{paths[]|documents[]}`; `GET /knowledge/search?q=&tags=&limit=`; `GET /healthz`. **No approvals endpoint** (FlowForge owns approvals — resolution R11).
 
-Investigation result JSON Schema is `services/ai-ops/app/schemas/investigation_result.v1.schema.json`; shape = v1.0 §11.7 plus `evidence[]` (`{ref_id, tool, params, retrieved_at, excerpt_hash}`), every `observed_facts[].evidence_ref` ∈ `evidence[].ref_id`, `status ∈ {completed, insufficient_evidence, failed}`, `proposals[]` (`{action_type, params, risk, rationale, requires_approval}` — `requires_approval` is always `true` for write-capable actions and enforced server-side by FlowForge regardless of AI output).
+Investigation result JSON Schema is `services/aiops/schemas/investigation_result.schema.json` (task 06.05); shape = v1.0 §11.7 plus `evidence[]` (`{ref_id, tool, params, retrieved_at, excerpt_hash}`), every `observed_facts[].evidence_ref` ∈ `evidence[].ref_id`, `status ∈ {completed, insufficient_evidence, failed}`, `proposals[]` (`{action_type, params, risk, rationale, requires_approval}` — `requires_approval` is always `true` for write-capable actions and enforced server-side by FlowForge regardless of AI output).
 
 ## 11. Observability contract
 

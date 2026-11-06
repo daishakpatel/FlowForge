@@ -64,7 +64,7 @@ Format: Context → Decision → Alternatives considered → Consequences.
 **Consequences.** Slightly larger messages; explicit schema validation code on both sides.
 
 ## ADR-011 — Stream correctness: persisted dedupe, recompute-from-ticks, commit-after-write
-**Decision.** Ticks are inserted with `ON CONFLICT DO NOTHING` on `(event_id,event_time)`. For each affected `(symbol,window)` the processor *recomputes* the aggregate from stored ticks and upserts (`input_hash` stored). Offsets are committed only after the DB transaction commits. Late events within `allowed_lateness` simply trigger a recompute; later ones are not stored: they are counted (`marketdata_events_late_total`) and sent to the DLQ with `reason=late` (FR-KAFKA-09).
+**Decision.** Ticks are inserted with `ON CONFLICT DO NOTHING` on `(event_id,event_time)`. For each affected `(symbol,window)` the processor *recomputes* the aggregate from stored ticks and upserts (`input_hash` stored). Offsets are committed only after the DB transaction commits. Late events within `allowed_lateness` simply trigger a recompute; later ones are not stored: they are counted (`flowforge_stream_late_events_total{disposition}` (`00E §11.1`)) and sent to the DLQ with `reason=late` (FR-KAFKA-09).
 **Alternatives.** Incremental in-memory state (lost on crash; needs checkpointing = Flink territory); exactly-once Kafka transactions into a non-Kafka sink (not available).
 **Consequences.** Slightly higher DB read cost per batch (bounded by distinct windows per batch); replay-safe by construction.
 

@@ -394,20 +394,20 @@ flowforge/
 │   ├── api/{rest,auth,sse,internalapi}/ workerapi/ scheduler/ recovery/ cron/ outbox/
 │   ├── coordination/ (client lib: election, leases, counters)
 │   ├── raftkv/{node,storage,transport,fsm,server,client}/
-│   ├── worker/{runtime,handlers}/ kafkax/ events/ marketdata/{model,source,producer,processor,window,store,replay,monitor}/
+│   ├── worker/{runtime,handlers}/ kafkax/ events/ stream/{domain,source,producer,processor,aggregator,store,replay,monitor,quality}/
 │   └── testutil/
 ├── pkg/{retry,client}/
 ├── migrations/{flowforge,marketdata}/
-├── services/ai-ops/{pyproject.toml,app/{api,graph,retrieval,ingestion,tools,llm,schemas,config},tests,evals}/
-├── frontend/
-├── deploy/{docker,compose,k8s,prometheus,grafana,otel,toxiproxy}/
+├── services/aiops/{pyproject.toml,src/aiops/,schemas/,eval/,migrations/,tests/}   # package layout per task 06.01
+├── web/
+├── deploy/{docker,compose,k8s,kafka,prometheus,alertmanager,grafana,otel,toxiproxy}/
 ├── docs/{architecture,decisions,runbooks,api,testing,implementation-reports}/
-├── test/{integration,fault,e2e,load,fixtures}/
+├── test/{e2e,fault,chaos,load,fixtures}/   # integration tests live beside code under the `integration` build tag
 ├── scripts/{dev,chaos,demo}/
 └── .github/workflows/
 ```
 
-Single Go module (`github.com/<owner>/flowforge`; agent chooses owner placeholder `example` until told otherwise and records it).
+Single Go module: `github.com/daishakpatel/flowforge`.
 
 ---
 
