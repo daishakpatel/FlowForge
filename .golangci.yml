@@ -1,0 +1,95 @@
+# golangci-lint v2 config (version pinned in docs/decisions/versions.md and .github/workflows/go.yml).
+# Boundary rules come from task 01.01 §5 and 00C §8; `make lint-selftest` proves they fire.
+version: "2"
+
+run:
+  timeout: 5m
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/daishakpatel/flowforge
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose
+    - contextcheck
+    - depguard
+    - errorlint
+    - forbidigo
+    - gosec
+    - noctx
+    - revive
+  settings:
+    gosec:
+      severity: medium
+      confidence: medium
+    forbidigo:
+      analyze-types: true
+      forbid:
+        # 01.04 adds internal/clock; until then cmd/** and internal/clock are the allow-list (see exclusions).
+        - pattern: ^time\.(Now|Since|Until)$
+          msg: read time from an injected clock.Clock (internal/clock), see 00C §8.1
+    depguard:
+      rules:
+        pure-domain:
+          files:
+            - "**/internal/dag/**"
+            - "**/internal/workflow/model/**"
+            - "**/internal/workflow/statemachine/**"
+            - "**/internal/workflow/template/**"
+          deny:
+            - pkg: database/sql
+              desc: domain logic is database-free (ADR-020)
+            - pkg: github.com/jackc/pgx
+              desc: domain logic is database-free (ADR-020)
+            - pkg: net/http
+              desc: domain logic has no transport
+            - pkg: google.golang.org/grpc
+              desc: domain logic has no transport
+            - pkg: github.com/daishakpatel/flowforge/internal/persistence
+              desc: domain must not depend on persistence (00C §8)
+            - pkg: github.com/daishakpatel/flowforge/internal/api
+              desc: domain must not depend on the API layer (00C §8)
+        raft-fsm:
+          files:
+            - "**/internal/raftkv/fsm/**"
+          deny:
+            - pkg: net
+              desc: the Raft FSM is deterministic, no network (ADR-005)
+            - pkg: github.com/daishakpatel/flowforge/internal/persistence
+              desc: Raft holds coordination state only (ADR-003)
+        raftkv:
+          files:
+            - "**/internal/raftkv/**"
+          deny:
+            - pkg: github.com/daishakpatel/flowforge/internal/persistence
+              desc: Raft holds coordination state only (ADR-003)
+            - pkg: github.com/daishakpatel/flowforge/internal/scheduler
+              desc: raftkv imports no FlowForge application packages (00C §8.1)
+        stream-domain:
+          files:
+            - "**/internal/stream/domain/**"
+          deny:
+            - pkg: database/sql
+              desc: the stream domain is pure (00C §8.1)
+            - pkg: github.com/jackc/pgx
+              desc: the stream domain is pure (00C §8.1)
+            - pkg: github.com/twmb/franz-go
+              desc: the stream domain is pure (00C §8.1)
+        api:
+          files:
+            - "**/internal/api/**"
+          deny:
+            - pkg: github.com/daishakpatel/flowforge/internal/scheduler
+              desc: the API never schedules (master spec §3.2)
+  exclusions:
+    rules:
+      - path: (^|/)(cmd|internal/clock)/
+        linters:
+          - forbidigo
