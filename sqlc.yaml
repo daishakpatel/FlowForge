@@ -1,0 +1,13 @@
+# sqlc configuration (task 02.01, ADR-014). Regenerate with `make sqlc`; CI fails if the committed
+# code in internal/persistence/sqlcgen differs (`make sqlc-check`). The schema is read from the goose
+# migrations; sqlc ignores their `-- +goose Down` sections.
+version: "2"
+sql:
+  - engine: postgresql
+    schema: migrations/flowforge
+    queries: internal/persistence/queries
+    gen:
+      go:
+        package: sqlcgen
+        out: internal/persistence/sqlcgen
+        sql_package: pgx/v5

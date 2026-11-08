@@ -54,6 +54,17 @@ jobs:
           go-version-file: go.mod
       - run: make test-integration
 
+  sqlc-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      # Same version as SQLC_VERSION in the Makefile (docs/decisions/versions.md).
+      - run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
+      - run: make sqlc-check
+
   build:
     runs-on: ubuntu-latest
     steps:

@@ -3,13 +3,17 @@ SHELL := /bin/bash
 
 MODULE                := github.com/daishakpatel/flowforge
 GOLANGCI_LINT_VERSION := 2.15.0
+SQLC_VERSION          := 1.31.1
+# sqlc from PATH, else where `go install` puts it.
+SQLC                  ?= $(shell command -v sqlc 2>/dev/null || echo $(shell go env GOPATH)/bin/sqlc)
+DB                    ?= flowforge
 VERSION               ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT                ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 LDFLAGS               := -X $(MODULE)/internal/version.version=$(VERSION) -X $(MODULE)/internal/version.commit=$(COMMIT)
 COVER_PROFILE         := coverage.out
 COMPOSE               := docker compose --profile core --profile streaming
 
-.PHONY: help build test test-race test-integration lint lint-selftest fmt tidy cover cover-check proto sqlc openapi-check clean dev-up dev-down dev-reset psql psql-md logs
+.PHONY: help build test test-race test-integration lint lint-selftest fmt tidy cover cover-check proto sqlc sqlc-check migrate-up migrate-status openapi-check clean dev-up dev-down dev-reset psql psql-md logs
 
 help: ## List targets
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-18s %s\n", $$1, $$2}'
@@ -50,8 +54,19 @@ cover-check: ## Fail if a gated package tree is below 70% coverage (NFR-TEST-01)
 proto: ## Generate protobuf code (placeholder until 03.01/04.01)
 	@echo "proto: not yet configured (task 03.01 / 04.01)"
 
-sqlc: ## Generate sqlc code (placeholder until 02.01)
-	@echo "sqlc: not yet configured (task 02.01)"
+sqlc: ## Generate internal/persistence/sqlcgen from migrations + queries (sqlc $(SQLC_VERSION))
+	@$(SQLC) version 2>/dev/null | grep -q "v$(SQLC_VERSION)" || { echo "sqlc: need v$(SQLC_VERSION): go install github.com/sqlc-dev/sqlc/cmd/sqlc@v$(SQLC_VERSION)"; exit 1; }
+	$(SQLC) generate
+
+sqlc-check: sqlc ## Fail if generated sqlc code differs from what is committed (CI drift check)
+	@git diff --exit-code -- internal/persistence/sqlcgen && test -z "$$(git status --porcelain -- internal/persistence/sqlcgen)" \
+		|| { echo "sqlc-check: internal/persistence/sqlcgen is stale; run make sqlc and commit"; exit 1; }
+
+migrate-up: ## Apply migrations to the dev database (DB=flowforge|marketdata; DSN from FF_PG_DSN/FF_MD_PG_DSN)
+	go run ./cmd/flowforge-migrate --db $(DB) up
+
+migrate-status: ## Show migration status of the dev database (DB=flowforge|marketdata)
+	go run ./cmd/flowforge-migrate --db $(DB) status
 
 openapi-check: ## Check OpenAPI drift (placeholder until 02.04)
 	@echo "openapi-check: not yet configured (task 02.04)"

@@ -8,6 +8,7 @@ A distributed workflow runtime and AI operations platform: a Go control plane wi
 git clone https://github.com/daishakpatel/FlowForge.git && cd FlowForge
 make lint test          # needs Go and golangci-lint
 make dev-up             # local Postgres (flowforge, aiops) and TimescaleDB (marketdata); needs Docker
+make migrate-up         # create the flowforge schema (make migrate-status shows the version)
 make test-integration   # integration tests against real databases
 ```
 
