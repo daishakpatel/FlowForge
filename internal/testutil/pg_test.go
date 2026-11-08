@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/daishakpatel/flowforge/internal/persistence/migrate"
 )
 
 func TestWithDatabase(t *testing.T) {
@@ -69,9 +71,11 @@ func TestServerUnavailable_FailsWhenDockerRequired(t *testing.T) {
 	}
 }
 
-func TestApplyMigrations_NotYetAvailable(t *testing.T) {
-	if err := ApplyMigrations(t, "postgres://x/y", "migrations/flowforge"); !errors.Is(err, ErrMigrationsUnavailable) {
-		t.Fatalf("ApplyMigrations error = %v, want ErrMigrationsUnavailable", err)
+// TestApplyMigrations_UnknownSet replaces the 01.02 stub test: the set is checked before any
+// connection, so this needs no database.
+func TestApplyMigrations_UnknownSet(t *testing.T) {
+	if err := ApplyMigrations(t, "postgres://x/y", "migrations/flowforge"); !errors.Is(err, migrate.ErrUnknownSet) {
+		t.Fatalf("ApplyMigrations error = %v, want migrate.ErrUnknownSet", err)
 	}
 }
 

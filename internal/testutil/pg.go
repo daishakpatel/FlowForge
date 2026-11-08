@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -21,9 +20,6 @@ const pgImage = "pgvector/pgvector:0.8.7-pg16"
 
 // requireDockerEnv makes a missing Docker fail the test instead of skipping it (CI sets it).
 const requireDockerEnv = "FF_TEST_REQUIRE_DOCKER"
-
-// ErrMigrationsUnavailable is returned by ApplyMigrations until task 02.01 adds the migration runner.
-var ErrMigrationsUnavailable = errors.New("testutil: migrations are not available until task 02.01")
 
 // PG is a database created for one test. It is dropped when that test ends.
 type PG struct {
@@ -58,14 +54,6 @@ var pgServer = &server{name: "postgres", image: pgImage, dsnEnv: "FF_TEST_PG_DSN
 func NewPostgres(t testing.TB) *PG {
 	t.Helper()
 	return newDatabase(t, pgServer)
-}
-
-// ApplyMigrations is the hook point for applying migrations to a test database. Task 02.01
-// implements it; until then it returns ErrMigrationsUnavailable.
-func ApplyMigrations(t testing.TB, dsn, dir string) error {
-	t.Helper()
-	_, _ = dsn, dir
-	return ErrMigrationsUnavailable
 }
 
 func newDatabase(t testing.TB, s *server) *PG {
