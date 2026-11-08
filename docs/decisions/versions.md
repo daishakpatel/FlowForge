@@ -18,4 +18,7 @@ The one place agents record the versions they choose (`00C` §2.6, §10.3). Add 
 | `github.com/testcontainers/testcontainers-go` (+ `modules/postgres`) | v0.45.0 | 2026-11-06 | 01.02 | MIT. Starts throwaway database containers; pulls `testcontainers/ryuk:0.14.0` to clean them up. |
 | `github.com/jackc/pgx/v5` | v5.12.0 | 2026-11-06 | 01.02 | MIT. Used by `internal/testutil` for admin connections; 02.03 uses it for the app. |
 | `go.uber.org/goleak` | v1.3.0 | 2026-11-06 | 01.02 | MIT. `testutil.LeakCheck`. |
+| `github.com/oklog/ulid/v2` | v2.1.2 | 2026-11-07 | 01.04 | Apache-2.0. `internal/ids`; named by task 01.04. |
+| `github.com/prometheus/client_golang` | v1.25.0 | 2026-11-07 | 01.04 | Apache-2.0. `internal/obs`; approved stack (`00C` §10.3). Pulls `client_model` v0.6.3, `common` v0.72.0, `procfs` v0.22.0. |
+| `google.golang.org/grpc` | v1.85.0 | 2026-11-07 | 01.04 | Apache-2.0. Only `grpc/codes` so far (`apperrors.GRPCCode`); approved stack. Was indirect at v1.67.0. Its minimum versions raised these indirect modules: `protobuf` v1.36.12, `otel` v1.45.0, `go-logr/logr` v1.4.4, `klauspost/compress` v1.20.1. |
 | `go.yaml.in/yaml/v3` | v3.0.5 | 2026-11-07 | 01.03 | MIT + Apache-2.0. Parses the `FF_CONFIG_FILE` YAML layer in `internal/config`; the standard library has no YAML. Maintained successor of `gopkg.in/yaml.v3`; was already in `go.sum` as an indirect dependency of testcontainers, now direct. |

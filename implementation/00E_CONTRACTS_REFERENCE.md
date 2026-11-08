@@ -377,7 +377,7 @@ Investigation result JSON Schema is `services/aiops/schemas/investigation_result
 
 ## 11. Observability contract
 
-Metric names (prefix per component; labels low-cardinality only: `queue`, `task_type`, `status`, `outcome`, `node`, `topic`, `partition`, `group`):
+Metric names (prefix per component; labels low-cardinality only: `queue`, `task_type`, `status`, `outcome`, `node`, `topic`, `partition`, `group`, plus the labels the metrics below use: `route`, `method`, `code`, `peer`, `reason`, `stage`, `kind`, `tool`, `disposition`, `result`, `symbol`; enforced by `obs.AllowedLabels()`, task 01.04):
 - API: `flowforge_http_requests_total{route,method,code}`, `flowforge_http_request_duration_seconds`.
 - Scheduler: `flowforge_scheduler_is_leader`, `flowforge_scheduler_epoch`, `flowforge_scheduler_tick_duration_seconds`, `flowforge_scheduler_queue_depth{queue}`, `flowforge_tasks_total{status}`, `flowforge_tasks_retried_total`, `flowforge_workflows_started_total`, `flowforge_workflows_completed_total{status}`, `flowforge_workflow_duration_seconds`, `flowforge_task_duration_seconds{task_type}`, `flowforge_outbox_backlog`, `flowforge_outbox_publish_lag_seconds`, `flowforge_stale_attempt_rejections_total`.
 - Workers: `flowforge_workers_registered`, `flowforge_worker_active_tasks`, `flowforge_worker_lease_renewal_failures_total`, `flowforge_worker_lease_expired_total`.

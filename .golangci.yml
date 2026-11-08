@@ -32,9 +32,9 @@ linters:
     forbidigo:
       analyze-types: true
       forbid:
-        # 01.04 adds internal/clock; until then cmd/** and internal/clock are the allow-list (see exclusions).
-        - pattern: ^time\.(Now|Since|Until)$
-          msg: read time from an injected clock.Clock (internal/clock), see 00C §8.1
+        # 01.04: wall-clock reads and timers go through internal/clock; cmd/** and internal/clock are exempt (see exclusions).
+        - pattern: ^time\.(Now|Since|Until|Sleep|After|AfterFunc|Tick|NewTimer|NewTicker)$
+          msg: read time and wait through an injected clock.Clock (internal/clock), see 00C §8.1
         # 01.03: config comes only from internal/config; cmd/** and internal/testutil are exempt (see exclusions).
         - pattern: ^os\.(Getenv|LookupEnv|Environ)$
           msg: read configuration through internal/config (docs/configuration.md), see 00C §8.1
@@ -93,7 +93,12 @@ linters:
               desc: the API never schedules (master spec §3.2)
   exclusions:
     rules:
-      - path: (^|/)(cmd|internal/clock)/
+      - path: (^|/)cmd/
+        linters:
+          - forbidigo
+      # internal/clock wraps the time package; only the time rule is lifted, the env ban still applies.
+      - path: (^|/)internal/clock/
+        text: time\.
         linters:
           - forbidigo
       # internal/testutil reads FF_TEST_* (00A amendment, 01.02); only the env rule is lifted.
