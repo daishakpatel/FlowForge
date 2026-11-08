@@ -124,3 +124,8 @@ Format: Context → Decision → Alternatives considered → Consequences.
 - **What:** five dev- and test-only environment variables added to `00E` §6. `FF_DEV_PG_PORT` and `FF_DEV_MD_PORT` override the Compose host ports (defaults stay 5432/5433). `FF_TEST_PG_DSN`, `FF_TEST_MD_DSN` and `FF_TEST_REQUIRE_DOCKER` configure `internal/testutil`; task 01.02 names the first and last, and `FF_TEST_MD_DSN` is the Timescale counterpart.
 - **Why:** the task requires the test variables, and a fixed host port fails on machines where 5432 is already in use (it was on the implementing machine).
 - **Impact:** compatible extension; no service reads these variables, and no existing contract changes. 01.03 must let `internal/testutil` read `FF_TEST_*` when it bans `os.Getenv` outside `internal/config`.
+
+### ADR-008 / ADR-014 amendment — 02.01 — 2026-11-08
+- **What:** migration `0001_core.sql` adds `CREATE UNIQUE INDEX uq_tasks_original_key ON workflow_tasks(run_id, task_key) WHERE supersedes_task_id IS NULL`, recorded in `00E` §2.
+- **Why:** `UNIQUE (run_id, task_key, supersedes_task_id)` treats NULLs as distinct, so two original (non-rerun) tasks could share a key in one run. Task 02.01 §5 requires the index.
+- **Impact:** compatible extension (a new index); rerun rows (ADR-008) still reuse a key once per superseded task. No column, table or existing constraint changes. Tested by `TestSchema_Constraints`.

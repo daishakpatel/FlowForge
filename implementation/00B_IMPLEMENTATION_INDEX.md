@@ -490,7 +490,7 @@ Tick when the task's completion report exists and all acceptance criteria are me
 
 **Phase 02 — Workflow Core (domain, persistence, API, security)**
 
-- [ ] `02.01` Migration framework and core PostgreSQL schema — `phase-02-workflow-core/02.01_migrations_and_core_schema.md`
+- [x] `02.01` Migration framework and core PostgreSQL schema — `phase-02-workflow-core/02.01_migrations_and_core_schema.md`
 - [ ] `02.02` Domain model, state machines and DAG validator (pure logic) — `phase-02-workflow-core/02.02_domain_model_state_machines_dag.md`
 - [ ] `02.03` Persistence layer: repositories, transactions, conditional transitions, event/outbox recording — `phase-02-workflow-core/02.03_repository_layer.md`
 - [ ] `02.04` REST API: definitions, runs, tasks, OpenAPI contract, idempotent run start — `phase-02-workflow-core/02.04_rest_api_definitions_runs.md`

@@ -81,6 +81,7 @@ CREATE TABLE workflow_tasks (
 );
 CREATE INDEX ix_tasks_dispatch ON workflow_tasks(queue_name, task_type, available_at) WHERE status = 'QUEUED';
 CREATE INDEX ix_tasks_run ON workflow_tasks(run_id, status);
+CREATE UNIQUE INDEX uq_tasks_original_key ON workflow_tasks(run_id, task_key) WHERE supersedes_task_id IS NULL; -- NULLs are distinct in the UNIQUE above (02.01)
 
 CREATE SEQUENCE attempt_fencing_seq;
 CREATE TABLE task_attempts (
@@ -288,7 +289,7 @@ Election tick 10 × 100 ms = 1 s heartbeat tick 1 (100 ms); `PreVote` and `Check
 |---|---|---|
 | `FF_ENV` | `dev` (one of `dev`, `test`, `prod`) | all |
 | `FF_LOG_LEVEL` / `FF_LOG_FORMAT` | `info` / `json` | all |
-| `FF_PG_DSN` | `postgres://flowforge:flowforge@localhost:5432/flowforge?sslmode=disable` | api, scheduler |
+| `FF_PG_DSN` | `postgres://flowforge:flowforge@localhost:5432/flowforge?sslmode=disable` | api, scheduler, flowforge-migrate |
 | `FF_API_HTTP_ADDR` / `FF_API_GRPC_ADDR` | `:8080` / `:9090` | api |
 | `FF_ADMIN_BOOTSTRAP_KEY` | (required in prod) | api |
 | `FF_RAFT_ENDPOINTS` | `raft-1:7000,raft-2:7000,raft-3:7000` | api, scheduler |
@@ -298,7 +299,7 @@ Election tick 10 × 100 ms = 1 s heartbeat tick 1 (100 ms); `PreVote` and `Check
 | `FF_WORKER_LEASE_TTL` / `FF_WORKER_HEARTBEAT` | `15s` / `5s` | api, worker |
 | `FF_WORKER_ID`, `FF_WORKER_QUEUES`, `FF_WORKER_CAPACITY`, `FF_API_GRPC_TARGET`, `FF_WORKER_TOKEN` | — | worker |
 | `FF_KAFKA_BROKERS` | `localhost:9092` | relay, worker, processor |
-| `FF_MD_PG_DSN` | `postgres://md:md@localhost:5433/marketdata?sslmode=disable` | processor, api(analytics) |
+| `FF_MD_PG_DSN` | `postgres://md:md@localhost:5433/marketdata?sslmode=disable` | processor, api(analytics), flowforge-migrate |
 | `FF_AI_URL`, `FF_AI_TOKEN` | `http://ai-ops:8000` | worker |
 | `AI_*` (Python: `AI_LLM_PROVIDER=mock|…`, `AI_EMBED_PROVIDER`, `AI_FLOWFORGE_URL`, `AI_FLOWFORGE_TOKEN`, `AI_PROM_URL`, `AI_DB_URL`) | — | ai-ops |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://otel-collector:4317` | all |
