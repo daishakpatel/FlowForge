@@ -286,7 +286,7 @@ Election tick 10 × 100 ms = 1 s heartbeat tick 1 (100 ms); `PreVote` and `Check
 
 | Var | Default | Used by |
 |---|---|---|
-| `FF_ENV` | `dev` | all |
+| `FF_ENV` | `dev` (one of `dev`, `test`, `prod`) | all |
 | `FF_LOG_LEVEL` / `FF_LOG_FORMAT` | `info` / `json` | all |
 | `FF_PG_DSN` | `postgres://flowforge:flowforge@localhost:5432/flowforge?sslmode=disable` | api, scheduler |
 | `FF_API_HTTP_ADDR` / `FF_API_GRPC_ADDR` | `:8080` / `:9090` | api |
@@ -306,7 +306,7 @@ Election tick 10 × 100 ms = 1 s heartbeat tick 1 (100 ms); `PreVote` and `Check
 | `FF_TEST_PG_DSN` / `FF_TEST_MD_DSN` | unset (start containers) | `internal/testutil`: admin DSN (URL form) of an existing server (tests only) |
 | `FF_TEST_REQUIRE_DOCKER` | unset (skip without Docker) | `internal/testutil`: fail instead of skip when containers can't start (tests only; CI sets it) |
 
-Config precedence: defaults < config file (optional `FF_CONFIG_FILE`) < env. Secrets never logged (§ redaction).
+Config precedence: defaults < config file (optional `FF_CONFIG_FILE`) < env. Secrets never logged (§ redaction). Loader, file format and validation rules: `docs/configuration.md` (task 01.03).
 
 ## 7. Kafka contract
 

@@ -485,7 +485,7 @@ Tick when the task's completion report exists and all acceptance criteria are me
 
 - [x] `01.01` Repository, toolchain and CI skeleton — `phase-01-foundation/01.01_repo_toolchain_ci.md`
 - [x] `01.02` Local development environment (Compose, databases, test utilities) — `phase-01-foundation/01.02_development_environment.md`
-- [ ] `01.03` Configuration management — `phase-01-foundation/01.03_configuration_management.md`
+- [x] `01.03` Configuration management — `phase-01-foundation/01.03_configuration_management.md`
 - [ ] `01.04` Cross-cutting foundations: logging, errors, IDs, clock, metrics/health server — `phase-01-foundation/01.04_logging_errors_ids_clock_metrics.md`
 
 **Phase 02 — Workflow Core (domain, persistence, API, security)**
