@@ -42,7 +42,7 @@ make logs              # follow the stack's logs
 | `postgres` | `pgvector/pgvector:0.8.7-pg16` | `5432` (`FF_DEV_PG_PORT`) | `flowforge`, `aiops` | `flowforge`/`flowforge` owns `flowforge`; `aiops`/`aiops` owns `aiops`; admin `postgres`/`postgres` | `vector` in `aiops` |
 | `timescaledb` | `timescale/timescaledb:2.31.0-pg16` | `5433` (`FF_DEV_MD_PORT`) | `marketdata` | `md`/`md` (admin) | `timescaledb` |
 
-The connection strings the services use are in [`.env.example`](../.env.example) and `00E` §6. The `postgres` server's roles and databases come from `deploy/docker/postgres-init/`, which runs only when the volume is first created.
+The connection strings the services use are in [`.env.example`](../.env.example) and `00E` §6; how services load them is in [`configuration.md`](configuration.md). The `postgres` server's roles and databases come from `deploy/docker/postgres-init/`, which runs only when the volume is first created.
 
 ### Compose profiles
 

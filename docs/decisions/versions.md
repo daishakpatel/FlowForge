@@ -18,3 +18,4 @@ The one place agents record the versions they choose (`00C` §2.6, §10.3). Add 
 | `github.com/testcontainers/testcontainers-go` (+ `modules/postgres`) | v0.45.0 | 2026-11-06 | 01.02 | MIT. Starts throwaway database containers; pulls `testcontainers/ryuk:0.14.0` to clean them up. |
 | `github.com/jackc/pgx/v5` | v5.12.0 | 2026-11-06 | 01.02 | MIT. Used by `internal/testutil` for admin connections; 02.03 uses it for the app. |
 | `go.uber.org/goleak` | v1.3.0 | 2026-11-06 | 01.02 | MIT. `testutil.LeakCheck`. |
+| `go.yaml.in/yaml/v3` | v3.0.5 | 2026-11-07 | 01.03 | MIT + Apache-2.0. Parses the `FF_CONFIG_FILE` YAML layer in `internal/config`; the standard library has no YAML. Maintained successor of `gopkg.in/yaml.v3`; was already in `go.sum` as an indirect dependency of testcontainers, now direct. |

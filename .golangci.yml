@@ -35,6 +35,9 @@ linters:
         # 01.04 adds internal/clock; until then cmd/** and internal/clock are the allow-list (see exclusions).
         - pattern: ^time\.(Now|Since|Until)$
           msg: read time from an injected clock.Clock (internal/clock), see 00C §8.1
+        # 01.03: config comes only from internal/config; cmd/** and internal/testutil are exempt (see exclusions).
+        - pattern: ^os\.(Getenv|LookupEnv|Environ)$
+          msg: read configuration through internal/config (docs/configuration.md), see 00C §8.1
     depguard:
       rules:
         pure-domain:
@@ -91,5 +94,10 @@ linters:
   exclusions:
     rules:
       - path: (^|/)(cmd|internal/clock)/
+        linters:
+          - forbidigo
+      # internal/testutil reads FF_TEST_* (00A amendment, 01.02); only the env rule is lifted.
+      - path: (^|/)internal/(config|testutil)/
+        text: os\.(Getenv|LookupEnv|Environ)
         linters:
           - forbidigo
