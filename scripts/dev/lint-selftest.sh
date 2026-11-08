@@ -25,6 +25,14 @@ for linter in depguard forbidigo; do
     status=1
   fi
 done
+for rule in 'time\.Now' 'os\.Getenv'; do
+  if grep -q "$rule.*(forbidigo)" <<<"$out"; then
+    echo "lint-selftest: ok   forbidigo bans $rule"
+  else
+    echo "lint-selftest: FAIL forbidigo did not ban $rule"
+    status=1
+  fi
+done
 if [[ $status -ne 0 ]]; then
   printf '%s\n' "$out"
 fi
