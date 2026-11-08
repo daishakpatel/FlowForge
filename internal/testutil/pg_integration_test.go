@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/daishakpatel/flowforge/internal/persistence/migrate"
 )
 
 func connect(t *testing.T, dsn string) *pgx.Conn {
@@ -102,9 +104,17 @@ func TestNewTimescale_ExtensionInstalled(t *testing.T) {
 	}
 }
 
-func TestApplyMigrations_StubReturnsSentinel(t *testing.T) {
-	db := NewPostgres(t)
-	if err := ApplyMigrations(t, db.DSN, "migrations/flowforge"); !errors.Is(err, ErrMigrationsUnavailable) {
-		t.Fatalf("ApplyMigrations error = %v, want ErrMigrationsUnavailable", err)
+// TestNewFlowforgeDB_SchemaApplied replaces the 01.02 stub test now that migrations exist.
+func TestNewFlowforgeDB_SchemaApplied(t *testing.T) {
+	db := NewFlowforgeDB(t)
+	var n int
+	if err := connect(t, db.DSN).QueryRow(t.Context(), "SELECT count(*) FROM cluster_state").Scan(&n); err != nil || n != 1 {
+		t.Fatalf("cluster_state rows = %d (%v), want the seeded row", n, err)
+	}
+	if err := ApplyMigrations(t, db.DSN, "flowforge"); err != nil {
+		t.Fatalf("second ApplyMigrations should be a no-op: %v", err)
+	}
+	if err := ApplyMigrations(t, db.DSN, "nope"); !errors.Is(err, migrate.ErrUnknownSet) {
+		t.Fatalf("unknown set: %v", err)
 	}
 }

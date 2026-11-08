@@ -29,8 +29,8 @@
 // FF_TEST_REQUIRE_DOCKER is set, in which case it fails. CI sets it. Integration tests carry the
 // `integration` build tag and run with `make test-integration`.
 //
-// Migrations are not applied yet: ApplyMigrations returns ErrMigrationsUnavailable until task
-// 02.01 adds the migration runner.
+// NewFlowforgeDB returns such a database with every flowforge migration applied (task 02.01);
+// ApplyMigrations(t, dsn, "flowforge"|"marketdata") applies a set to any test database.
 //
 // # Waiting
 //
