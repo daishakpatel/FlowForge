@@ -9,7 +9,7 @@ How to set up a machine to build, run and test FlowForge. Exact versions live in
 | Go | 01.01 | as in `go.mod` | `brew install go` |
 | golangci-lint | 01.01 | as in `docs/decisions/versions.md` | `brew install golangci-lint` |
 | Docker with Compose v2 | 01.02 | recent Docker Desktop or Engine | Docker Desktop |
-| sqlc | 02.01 | recorded by 02.01 | `brew install sqlc` |
+| sqlc | 02.01 | 1.31.1 (`SQLC_VERSION` in the Makefile) | `go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1` |
 | buf | 03.01 / 04.01 | recorded by 03.01 | `brew install bufbuild/buf/buf` |
 | Python | 06.01 | ≥ 3.12 | `brew install python` |
 | Node.js | 07.01 | ≥ 20 | `brew install node` |
@@ -42,7 +42,7 @@ make logs              # follow the stack's logs
 | `postgres` | `pgvector/pgvector:0.8.7-pg16` | `5432` (`FF_DEV_PG_PORT`) | `flowforge`, `aiops` | `flowforge`/`flowforge` owns `flowforge`; `aiops`/`aiops` owns `aiops`; admin `postgres`/`postgres` | `vector` in `aiops` |
 | `timescaledb` | `timescale/timescaledb:2.31.0-pg16` | `5433` (`FF_DEV_MD_PORT`) | `marketdata` | `md`/`md` (admin) | `timescaledb` |
 
-The connection strings the services use are in [`.env.example`](../.env.example) and `00E` §6; how services load them is in [`configuration.md`](configuration.md). The `postgres` server's roles and databases come from `deploy/docker/postgres-init/`, which runs only when the volume is first created.
+The connection strings the services use are in [`.env.example`](../.env.example) and `00E` §6; how services load them is in [`configuration.md`](configuration.md). After `make dev-up`, run `make migrate-up` to create the `flowforge` schema; the schema and migration rules are in [`architecture/database.md`](architecture/database.md). The `postgres` server's roles and databases come from `deploy/docker/postgres-init/`, which runs only when the volume is first created.
 
 ### Compose profiles
 

@@ -55,8 +55,8 @@ Defaults are dev-only. "—" means there is no default.
 | `FF_LOG_FORMAT` | `json` | oneof `json text` | all (`Common`) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://otel-collector:4317` | url | all (`Common`) |
 | `FF_CONFIG_FILE` | — | file path | `Load` itself (`<Prefix>_CONFIG_FILE`) |
-| `FF_PG_DSN` | `postgres://flowforge:flowforge@localhost:5432/flowforge?sslmode=disable` | dsn, secret | `API`, `Scheduler` |
-| `FF_MD_PG_DSN` | `postgres://md:md@localhost:5433/marketdata?sslmode=disable` | dsn, secret | `Processor`, `API` (analytics) |
+| `FF_PG_DSN` | `postgres://flowforge:flowforge@localhost:5432/flowforge?sslmode=disable` | dsn, secret | `API`, `Scheduler`, `Migrate` |
+| `FF_MD_PG_DSN` | `postgres://md:md@localhost:5433/marketdata?sslmode=disable` | dsn, secret | `Processor`, `API` (analytics), `Migrate` |
 | `FF_API_HTTP_ADDR` | `:8080` | addr | `API` |
 | `FF_API_GRPC_ADDR` | `:9090` | addr | `API` |
 | `FF_ADMIN_BOOTSTRAP_KEY` | — | required_in_prod, secret | `API` |
