@@ -1,0 +1,15 @@
+{
+  "name": "market-data-hourly", "version": 1,
+  "timeout_seconds": 3600,
+  "on_failure": "fail",
+  "concurrency": {"max_parallel_tasks": 8},
+  "tasks": [{
+    "id": "fetch", "type": "market-data-ingest", "queue": "market-data",
+    "depends_on": [], "timeout_seconds": 120,
+    "config": {"symbols": "${run.input.symbols}", "window_minutes": 5},
+    "retry": {"max_attempts": 3, "strategy": "exponential",
+              "initial_delay_ms": 1000, "max_delay_ms": 60000, "multiplier": 2.0, "jitter": 0.2,
+              "non_retryable_errors": ["INVALID_INPUT"]},
+    "run_if": "on_success"
+  }]
+}
