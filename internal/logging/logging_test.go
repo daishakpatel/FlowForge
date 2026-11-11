@@ -173,6 +173,18 @@ func TestContextFields_IncludedAutomatically(t *testing.T) {
 	}
 }
 
+func TestField_ReturnsLatestValue(t *testing.T) {
+	t.Parallel()
+	ctx := WithFields(context.Background(), KeyRequestID, "req_1")
+	ctx = WithFields(ctx, KeyRequestID, "req_2")
+	if v, ok := Field(ctx, KeyRequestID); !ok || v.String() != "req_2" {
+		t.Errorf("Field(request_id) = %v, %v; want req_2, true", v, ok)
+	}
+	if _, ok := Field(ctx, KeyRunID); ok {
+		t.Error("Field(run_id) reported a value that was never set")
+	}
+}
+
 func TestContextFields_AreRedactedAndGroupSafe(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer

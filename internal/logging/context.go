@@ -49,6 +49,17 @@ func FromContext(ctx context.Context) *slog.Logger {
 	return l.With(args...)
 }
 
+// Field returns the value WithFields stored under key, such as KeyRequestID, and whether one
+// is set. Task 02.03 uses it to take an event's correlation_id from the request.
+func Field(ctx context.Context, key string) (slog.Value, bool) {
+	for _, a := range fieldsFrom(ctx) {
+		if a.Key == key {
+			return a.Value, true
+		}
+	}
+	return slog.Value{}, false
+}
+
 func fieldsFrom(ctx context.Context) []slog.Attr {
 	fs, _ := ctx.Value(fieldsKey{}).([]slog.Attr)
 	return fs
