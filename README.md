@@ -12,7 +12,7 @@ make migrate-up         # create the flowforge schema (make migrate-status shows
 make test-integration   # integration tests against real databases
 ```
 
-Toolchain requirements, ports, profiles and troubleshooting are in [`docs/development.md`](docs/development.md); environment variables and config files in [`docs/configuration.md`](docs/configuration.md); logging, errors, IDs, clock and metrics conventions in [`docs/architecture/cross-cutting.md`](docs/architecture/cross-cutting.md); definitions, validation and state machines in [`docs/architecture/workflow-semantics.md`](docs/architecture/workflow-semantics.md); `make help` lists every target. Licensed under MIT.
+Toolchain requirements, ports, profiles and troubleshooting are in [`docs/development.md`](docs/development.md); environment variables and config files in [`docs/configuration.md`](docs/configuration.md); logging, errors, IDs, clock and metrics conventions in [`docs/architecture/cross-cutting.md`](docs/architecture/cross-cutting.md); definitions, validation and state machines in [`docs/architecture/workflow-semantics.md`](docs/architecture/workflow-semantics.md); repositories, transactions and event recording in [`docs/architecture/persistence.md`](docs/architecture/persistence.md); `make help` lists every target. Licensed under MIT.
 
 ## Implementation blueprint
 
