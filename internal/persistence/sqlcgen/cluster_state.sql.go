@@ -7,6 +7,8 @@ package sqlcgen
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const getClusterState = `-- name: GetClusterState :one
@@ -16,8 +18,7 @@ WHERE id = 1
 LIMIT 1
 `
 
-// The single scheduler-epoch fence row (00E §2, ADR-003). Proves the sqlc pipeline (task 02.01);
-// 02.03 adds the epoch queries.
+// The single scheduler-epoch fence row (00E §2, ADR-003).
 func (q *Queries) GetClusterState(ctx context.Context) (ClusterState, error) {
 	row := q.db.QueryRow(ctx, getClusterState)
 	var i ClusterState
@@ -28,4 +29,41 @@ func (q *Queries) GetClusterState(ctx context.Context) (ClusterState, error) {
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const lockEpoch = `-- name: LockEpoch :one
+SELECT epoch
+FROM cluster_state
+WHERE id = 1
+LIMIT 1
+FOR SHARE
+`
+
+// Row-share lock held to commit, so SetEpochIfGreater waits for in-flight scheduler transactions
+// (ADR-003).
+func (q *Queries) LockEpoch(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, lockEpoch)
+	var epoch int64
+	err := row.Scan(&epoch)
+	return epoch, err
+}
+
+const setEpochIfGreater = `-- name: SetEpochIfGreater :execrows
+UPDATE cluster_state
+SET epoch = $1, leader_id = $2, updated_at = now()
+WHERE id = 1 AND epoch < $1
+`
+
+type SetEpochIfGreaterParams struct {
+	Epoch    int64
+	LeaderID pgtype.Text
+}
+
+// Raises the fence; 0 rows when the stored epoch is already >= epoch (master spec §3.5).
+func (q *Queries) SetEpochIfGreater(ctx context.Context, arg SetEpochIfGreaterParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setEpochIfGreater, arg.Epoch, arg.LeaderID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
