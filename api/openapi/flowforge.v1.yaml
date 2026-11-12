@@ -1,0 +1,765 @@
+openapi: 3.1.0
+info:
+  title: FlowForge API
+  version: 1.0.0
+  description: |
+    REST API of flowforge-api (task 02.04). Conventions (docs/api/README.md):
+    snake_case JSON, RFC 3339 UTC times, keyset pagination with `limit` and `cursor`,
+    the error envelope of 00E §4 on every non-2xx response, and an `X-Request-ID` header on
+    every response.
+servers:
+  - url: /
+security:
+  - ApiKeyAuth: []
+
+paths:
+  /healthz:
+    get:
+      operationId: getHealthz
+      summary: Liveness
+      security: []
+      responses:
+        '200':
+          description: The process is alive.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Health'}
+        default: {$ref: '#/components/responses/Error'}
+  /readyz:
+    get:
+      operationId: getReadyz
+      summary: Readiness (Postgres reachable and schema current)
+      security: []
+      responses:
+        '200':
+          description: Ready to serve traffic.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Health'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+        default: {$ref: '#/components/responses/Error'}
+  /metrics:
+    get:
+      operationId: getMetrics
+      summary: Prometheus metrics (network-restricted in deployments)
+      security: []
+      responses:
+        '200':
+          description: Prometheus text exposition format.
+          content:
+            text/plain:
+              schema: {type: string}
+        default: {$ref: '#/components/responses/Error'}
+  /openapi.json:
+    get:
+      operationId: getOpenAPI
+      summary: This document, as JSON
+      security: []
+      responses:
+        '200':
+          description: The OpenAPI document.
+          content:
+            application/json:
+              schema: {type: object}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/workflows:
+    post:
+      operationId: createWorkflow
+      summary: Create an immutable workflow definition
+      description: |
+        The body is the definition JSON (00E §3.5), at most 512 KiB. Unknown fields are rejected.
+        Without `version`, the definition becomes the next version of its name.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/WorkflowDefinition'}
+      responses:
+        '201':
+          description: Created.
+          headers:
+            Location: {$ref: '#/components/headers/Location'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Workflow'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '422': {$ref: '#/components/responses/InvalidWorkflow'}
+        default: {$ref: '#/components/responses/Error'}
+    get:
+      operationId: listWorkflows
+      summary: List definitions, newest first
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WorkflowList'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/workflows/{id}:
+    get:
+      operationId: getWorkflow
+      parameters:
+        - $ref: '#/components/parameters/WorkflowID'
+      responses:
+        '200':
+          description: The definition.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Workflow'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/workflows/by-name/{name}:
+    get:
+      operationId: getWorkflowByName
+      summary: A definition by name; the latest version unless `version` is given
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: {type: string}
+        - name: version
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1}
+      responses:
+        '200':
+          description: The definition.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Workflow'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/workflows/{id}/runs:
+    post:
+      operationId: startRun
+      summary: Start a run of a definition
+      description: |
+        With `Idempotency-Key`, repeating the same request (same definition, equal input)
+        returns the original run with `200` and `Idempotent-Replay: true`; reusing the key for
+        a different request is `409`.
+      parameters:
+        - $ref: '#/components/parameters/WorkflowID'
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema: {type: string, maxLength: 128}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/StartRunRequest'}
+      responses:
+        '201':
+          description: Run created.
+          headers:
+            Location: {$ref: '#/components/headers/Location'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Run'}
+        '200':
+          description: Idempotent replay of an earlier identical request.
+          headers:
+            Idempotent-Replay:
+              description: Always `true`.
+              schema: {type: string, const: 'true'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Run'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/runs:
+    get:
+      operationId: listRuns
+      summary: List runs, newest first
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          schema: {$ref: '#/components/schemas/RunStatus'}
+        - name: workflow
+          in: query
+          description: Definition name.
+          schema: {type: string}
+        - name: since
+          in: query
+          description: Runs created at or after this time.
+          schema: {type: string, format: date-time}
+        - name: until
+          in: query
+          description: Runs created before this time.
+          schema: {type: string, format: date-time}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RunList'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/runs/{run_id}:
+    get:
+      operationId: getRun
+      parameters:
+        - $ref: '#/components/parameters/RunID'
+      responses:
+        '200':
+          description: The run.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Run'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/runs/{run_id}/tasks:
+    get:
+      operationId: listRunTasks
+      summary: Every task row of the run, including superseded ones, in insertion order
+      parameters:
+        - $ref: '#/components/parameters/RunID'
+      responses:
+        '200':
+          description: All tasks (not paginated; `next_cursor` is always null).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TaskList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/runs/{run_id}/events:
+    get:
+      operationId: listRunEvents
+      summary: The run's event history, oldest first
+      parameters:
+        - $ref: '#/components/parameters/RunID'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EventList'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/tasks/{task_id}:
+    get:
+      operationId: getTask
+      parameters:
+        - $ref: '#/components/parameters/TaskID'
+      responses:
+        '200':
+          description: The task.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/tasks/{task_id}/attempts:
+    get:
+      operationId: listTaskAttempts
+      summary: The task's attempts by attempt number
+      parameters:
+        - $ref: '#/components/parameters/TaskID'
+      responses:
+        '200':
+          description: All attempts (not paginated; `next_cursor` is always null).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AttemptList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/api-keys:
+    post:
+      operationId: createAPIKey
+      summary: Create an API key (admin); the key is returned this once
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateAPIKeyRequest'}
+      responses:
+        '201':
+          description: Created. `key` is shown only in this response.
+          headers:
+            Location: {$ref: '#/components/headers/Location'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CreatedAPIKey'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        default: {$ref: '#/components/responses/Error'}
+    get:
+      operationId: listAPIKeys
+      summary: List API keys, newest first (never secrets)
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/APIKeyList'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/api-keys/{key_id}:
+    delete:
+      operationId: revokeAPIKey
+      summary: Revoke an API key (idempotent); the last active admin key cannot be revoked
+      parameters:
+        - name: key_id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        '204':
+          description: Revoked.
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        default: {$ref: '#/components/responses/Error'}
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: ff_<id>_<secret>
+      description: |
+        API key `ff_<keyid>_<secret>` (task 02.05, docs/api/authentication.md). Roles are
+        viewer < operator < admin; the service roles worker and ai-readonly reach only their own
+        route groups.
+
+  headers:
+    Location:
+      description: URL of the created resource.
+      schema: {type: string}
+    RetryAfter:
+      description: Seconds to wait before retrying.
+      schema: {type: string}
+
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      description: Page size; default 50, values above 200 are clamped to 200.
+      schema: {type: integer, minimum: 1}
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque cursor from the previous page's `next_cursor`.
+      schema: {type: string}
+    WorkflowID:
+      name: id
+      in: path
+      required: true
+      schema: {type: string}
+    RunID:
+      name: run_id
+      in: path
+      required: true
+      schema: {type: string}
+    TaskID:
+      name: task_id
+      in: path
+      required: true
+      schema: {type: string}
+
+  responses:
+    Error:
+      description: Any other failure.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    BadRequest:
+      description: Malformed or invalid request (INVALID_ARGUMENT).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Unauthorized:
+      description: Missing or invalid credential (UNAUTHENTICATED).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    NotFound:
+      description: No such resource (NOT_FOUND).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Forbidden:
+      description: The key's role may not call this route (PERMISSION_DENIED).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    RateLimited:
+      description: The key's rate limit is exhausted (RATE_LIMITED).
+      headers:
+        Retry-After: {$ref: '#/components/headers/RetryAfter'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Conflict:
+      description: Duplicate, Idempotency-Key reused for a different request, or revoking the last admin key (CONFLICT).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    PayloadTooLarge:
+      description: Body, definition or run input over its limit (PAYLOAD_TOO_LARGE).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    InvalidWorkflow:
+      description: DAG validation failed (INVALID_WORKFLOW); one detail per issue.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Unavailable:
+      description: A dependency is down (UNAVAILABLE).
+      headers:
+        Retry-After: {$ref: '#/components/headers/RetryAfter'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+
+  schemas:
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message, details, request_id]
+          properties:
+            code:
+              type: string
+              enum: [INVALID_ARGUMENT, INVALID_WORKFLOW, UNAUTHENTICATED, PERMISSION_DENIED, NOT_FOUND,
+                     CONFLICT, INVALID_STATE, STALE_ATTEMPT, PAYLOAD_TOO_LARGE, RATE_LIMITED,
+                     UNAVAILABLE, INTERNAL, NOT_LEADER, NO_QUORUM]
+            message: {type: string}
+            details:
+              type: array
+              items: {$ref: '#/components/schemas/ErrorDetail'}
+            request_id: {type: string, pattern: '^req_'}
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required: [message]
+      properties:
+        field: {type: string}
+        code: {type: string, description: 'Stable issue code, e.g. CYCLE (INVALID_WORKFLOW).'}
+        task_id: {type: string}
+        message: {type: string}
+
+    Health:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: {type: string, const: ok}
+
+    RunStatus:
+      type: string
+      enum: [CREATED, RUNNING, PAUSED, SUCCEEDED, FAILED, CANCELLED, NEEDS_ATTENTION]
+    TaskStatus:
+      type: string
+      enum: [PENDING, READY, QUEUED, RUNNING, RETRY_WAIT, SUCCEEDED, FAILED, TIMED_OUT, CANCELLED, SKIPPED]
+    AttemptStatus:
+      type: string
+      enum: [RUNNING, SUCCEEDED, FAILED, TIMED_OUT, ABANDONED, CANCELLED]
+    RunIf:
+      type: string
+      enum: [on_success, on_failure, always, expr]
+    NextCursor:
+      type: [string, 'null']
+      description: Cursor of the next page, or null on the last page.
+
+    RetryPolicy:
+      type: object
+      properties:
+        max_attempts: {type: integer, minimum: 1, maximum: 20}
+        strategy: {type: string, enum: [fixed, exponential]}
+        initial_delay_ms: {type: integer}
+        max_delay_ms: {type: integer}
+        multiplier: {type: number}
+        jitter: {type: number, minimum: 0, maximum: 1}
+        non_retryable_errors:
+          type: array
+          items: {type: string}
+    TaskDefinition:
+      type: object
+      required: [id, type]
+      properties:
+        id: {type: string, pattern: '^[a-z][a-z0-9_-]{0,62}$'}
+        type: {type: string}
+        queue: {type: string}
+        depends_on:
+          type: array
+          items: {type: string}
+        timeout_seconds: {type: integer, minimum: 1, maximum: 86400}
+        config: {type: object}
+        retry: {$ref: '#/components/schemas/RetryPolicy'}
+        run_if: {$ref: '#/components/schemas/RunIf'}
+        run_if_expr: {type: string}
+    WorkflowDefinition:
+      type: object
+      description: Workflow definition JSON v1 (00E §3.5); at most 500 tasks.
+      required: [name, tasks]
+      properties:
+        name: {type: string}
+        version: {type: integer, minimum: 1}
+        timeout_seconds: {type: integer, minimum: 0}
+        on_failure: {type: string, enum: [fail, needs_attention]}
+        concurrency:
+          type: object
+          properties:
+            max_parallel_tasks: {type: integer, minimum: 0}
+        tasks:
+          type: array
+          maxItems: 500
+          items: {$ref: '#/components/schemas/TaskDefinition'}
+
+    Workflow:
+      type: object
+      additionalProperties: false
+      required: [id, name, version, definition, created_by, created_at]
+      properties:
+        id: {type: string, pattern: '^wf_'}
+        name: {type: string}
+        version: {type: integer, minimum: 1}
+        definition: {$ref: '#/components/schemas/WorkflowDefinition'}
+        created_by: {type: string}
+        created_at: {type: string, format: date-time}
+    WorkflowList:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Workflow'}
+        next_cursor: {$ref: '#/components/schemas/NextCursor'}
+
+    StartRunRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        input:
+          type: object
+          description: Run input, at most 256 KiB. Defaults to {}.
+    Run:
+      type: object
+      additionalProperties: false
+      required: [id, definition_id, status, input, cancel_requested, created_by, created_at, version]
+      properties:
+        id: {type: string, pattern: '^run_'}
+        definition_id: {type: string}
+        status: {$ref: '#/components/schemas/RunStatus'}
+        input: {type: object}
+        idempotency_key: {type: string}
+        trigger_id: {type: string}
+        parent_run_id: {type: string}
+        deadline_at: {type: string, format: date-time}
+        cancel_requested: {type: boolean}
+        created_by: {type: string}
+        created_at: {type: string, format: date-time}
+        started_at: {type: string, format: date-time}
+        completed_at: {type: string, format: date-time}
+        version: {type: integer, format: int64}
+    RunList:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Run'}
+        next_cursor: {$ref: '#/components/schemas/NextCursor'}
+
+    Task:
+      type: object
+      additionalProperties: false
+      required: [id, run_id, task_key, task_type, queue, status, depends_on, run_if, config, retry_policy,
+                 timeout_seconds, attempt_count, available_at, created_at, updated_at, version]
+      properties:
+        id: {type: string, pattern: '^task_'}
+        run_id: {type: string}
+        task_key: {type: string}
+        task_type: {type: string}
+        queue: {type: string}
+        status: {$ref: '#/components/schemas/TaskStatus'}
+        depends_on:
+          type: array
+          items: {type: string}
+        run_if: {$ref: '#/components/schemas/RunIf'}
+        run_if_expr: {type: string}
+        config: {type: object}
+        input: {description: 'Resolved input, set when the task becomes QUEUED.'}
+        result: {description: 'Handler result, set when the task finishes.'}
+        retry_policy: {$ref: '#/components/schemas/RetryPolicy'}
+        timeout_seconds: {type: integer}
+        attempt_count: {type: integer}
+        available_at: {type: string, format: date-time}
+        supersedes_task_id: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        version: {type: integer, format: int64}
+    TaskList:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Task'}
+        next_cursor: {$ref: '#/components/schemas/NextCursor'}
+
+    Attempt:
+      type: object
+      additionalProperties: false
+      required: [id, task_id, attempt_number, status, started_at, deadline_at]
+      properties:
+        id: {type: string, pattern: '^att_'}
+        task_id: {type: string}
+        attempt_number: {type: integer, minimum: 1}
+        worker_id: {type: string}
+        status: {$ref: '#/components/schemas/AttemptStatus'}
+        started_at: {type: string, format: date-time}
+        deadline_at: {type: string, format: date-time}
+        last_heartbeat_at: {type: string, format: date-time}
+        finished_at: {type: string, format: date-time}
+        error_code: {type: string}
+        error_message: {type: string}
+        retryable: {type: boolean}
+        result: {description: Handler result.}
+    AttemptList:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Attempt'}
+        next_cursor: {$ref: '#/components/schemas/NextCursor'}
+
+    Event:
+      type: object
+      additionalProperties: false
+      required: [id, event_id, run_id, event_type, event_version, payload, correlation_id, created_at]
+      properties:
+        id: {type: integer, format: int64, description: Ordering key of the run's history.}
+        event_id: {type: string, pattern: '^evt_'}
+        run_id: {type: string}
+        task_id: {type: string}
+        event_type: {type: string, description: An 00E §7 event type such as task.queued.}
+        event_version: {type: integer}
+        payload: {type: object}
+        correlation_id: {type: string}
+        created_at: {type: string, format: date-time}
+    EventList:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Event'}
+        next_cursor: {$ref: '#/components/schemas/NextCursor'}
+
+    APIKey:
+      type: object
+      additionalProperties: false
+      required: [id, name, role, created_by, created_at]
+      properties:
+        id: {type: string, pattern: '^[a-z2-7]{12}$'}
+        name: {type: string}
+        role: {$ref: '#/components/schemas/Role'}
+        created_by: {type: string}
+        created_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+        revoked_at: {type: string, format: date-time}
+    CreatedAPIKey:
+      type: object
+      additionalProperties: false
+      required: [id, name, role, created_by, created_at, key]
+      properties:
+        id: {type: string, pattern: '^[a-z2-7]{12}$'}
+        name: {type: string}
+        role: {$ref: '#/components/schemas/Role'}
+        created_by: {type: string}
+        created_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+        key: {type: string, pattern: '^ff_[a-z2-7]{12}_[A-Za-z0-9_-]{43}$', description: The full API key. Store it now; it cannot be shown again.}
+    APIKeyList:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/APIKey'}
+        next_cursor: {$ref: '#/components/schemas/NextCursor'}
+    CreateAPIKeyRequest:
+      type: object
+      additionalProperties: false
+      required: [name, role]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100}
+        role: {$ref: '#/components/schemas/Role'}
+        expires_at: {type: string, format: date-time, description: Optional; must be in the future.}
+    Role:
+      type: string
+      enum: [viewer, operator, admin, worker, ai-readonly]

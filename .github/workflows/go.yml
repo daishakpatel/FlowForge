@@ -53,6 +53,7 @@ jobs:
         with:
           go-version-file: go.mod
       - run: make test-integration
+      - run: make openapi-check
 
   sqlc-drift:
     runs-on: ubuntu-latest

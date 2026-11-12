@@ -68,8 +68,9 @@ migrate-up: ## Apply migrations to the dev database (DB=flowforge|marketdata; DS
 migrate-status: ## Show migration status of the dev database (DB=flowforge|marketdata)
 	go run ./cmd/flowforge-migrate --db $(DB) status
 
-openapi-check: ## Check OpenAPI drift (placeholder until 02.04)
-	@echo "openapi-check: not yet configured (task 02.04)"
+openapi-check: ## Validate the OpenAPI spec, check route parity, run contract tests (Docker or FF_TEST_PG_DSN)
+	go test -count=1 -run 'TestOpenAPI_|TestContract_' ./internal/api/rest/
+	go test -count=1 -tags=integration -run 'TestContract_' ./internal/api/rest/
 
 clean: ## Remove build and coverage output
 	rm -rf bin $(COVER_PROFILE)
