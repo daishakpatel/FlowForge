@@ -119,6 +119,15 @@ func (r *RunRepo) Get(ctx context.Context, q persistence.Querier, id string) (pe
 	return runView(row), nil
 }
 
+// GetByIdempotencyKey implements persistence.RunRepo.
+func (r *RunRepo) GetByIdempotencyKey(ctx context.Context, q persistence.Querier, key string) (persistence.RunView, error) {
+	row, err := sqlcgen.New(q).GetRunByIdempotencyKey(ctx, text(key))
+	if err != nil {
+		return persistence.RunView{}, notFoundOr(err, "run")
+	}
+	return runView(row), nil
+}
+
 // List implements persistence.RunRepo.
 func (r *RunRepo) List(ctx context.Context, q persistence.Querier, f persistence.RunFilter, p persistence.Page) ([]persistence.RunView, string, error) {
 	at, id, err := cursorArgs(p.Cursor)

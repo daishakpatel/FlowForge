@@ -57,6 +57,8 @@ type RunRepo interface {
 	// run.DefinitionID names.
 	CreateWithTasks(ctx context.Context, tx pgx.Tx, run NewRun, def *model.Definition) (RunView, error)
 	Get(ctx context.Context, q Querier, id string) (RunView, error)
+	// GetByIdempotencyKey returns the run started with key, or NOT_FOUND (task 02.04).
+	GetByIdempotencyKey(ctx context.Context, q Querier, key string) (RunView, error)
 	List(ctx context.Context, q Querier, f RunFilter, page Page) ([]RunView, string, error)
 	Transition(ctx context.Context, tx pgx.Tx, p RunTransitionParams) error
 }
@@ -178,4 +180,50 @@ type AttemptTransitionParams struct {
 	FencingToken int64
 	Mutate       func(*AttemptMutation) // optional
 	Event        *events.Event          // replaces the default event derived from (From, To)
+}
+
+// APIKeyRepo stores API keys (task 02.05, ADR-015). Only salted SHA-256 hashes of secrets are
+// stored; revocation sets revoked_at and keeps the row.
+type APIKeyRepo interface {
+	// Create inserts a key; a duplicate id is CONFLICT.
+	Create(ctx context.Context, q Querier, k NewAPIKey) (APIKeyView, error)
+	// CreateIfAbsent inserts k unless its id exists and reports whether it did (bootstrap).
+	CreateIfAbsent(ctx context.Context, q Querier, k NewAPIKey) (bool, error)
+	Get(ctx context.Context, q Querier, id string) (APIKeyView, error)
+	List(ctx context.Context, q Querier, page Page) ([]APIKeyView, string, error)
+	// HasActiveAdmin reports whether an unrevoked, unexpired admin key exists.
+	HasActiveAdmin(ctx context.Context, q Querier) (bool, error)
+	// Revoke revokes a key (a no-op when already revoked), or returns NOT_FOUND. Revoking the
+	// last active admin key is CONFLICT; concurrent revocations are serialized by row locks, so
+	// at least one admin always remains.
+	Revoke(ctx context.Context, tx pgx.Tx, id string) error
+}
+
+// AuditRepo records audit_log rows (task 02.05, FR-SEC-03). It is the audit recorder that the
+// REST middleware and any later code recording a decision (approvals, 06.06) use.
+type AuditRepo interface {
+	Record(ctx context.Context, q Querier, e AuditEntry) error
+}
+
+// NewAPIKey is the input of APIKeyRepo.Create.
+type NewAPIKey struct {
+	ID         string // the key id inside ff_<id>_<secret>
+	Name       string
+	Role       string
+	SecretHash []byte // SHA-256(salt ‖ secret)
+	Salt       []byte
+	CreatedBy  string
+	ExpiresAt  *time.Time
+}
+
+// AuditEntry is one audit_log row. Details must never hold secrets or request bodies.
+type AuditEntry struct {
+	ActorKeyID   string // "" when the caller was not authenticated
+	ActorRole    string
+	Action       string // "METHOD /route/pattern"
+	ResourceType string
+	ResourceID   string
+	RequestID    string
+	Details      map[string]any
+	Outcome      string // ok | denied | error
 }

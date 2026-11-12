@@ -100,3 +100,21 @@ type EventView struct {
 	CorrelationID string
 	CreatedAt     time.Time
 }
+
+// APIKeyView is a stored API key. SecretHash and Salt never leave the server.
+type APIKeyView struct {
+	ID         string
+	Name       string
+	Role       string
+	SecretHash []byte
+	Salt       []byte
+	CreatedBy  string
+	CreatedAt  time.Time
+	ExpiresAt  *time.Time
+	RevokedAt  *time.Time
+}
+
+// Active reports whether the key is neither revoked nor expired at now.
+func (k APIKeyView) Active(now time.Time) bool {
+	return k.RevokedAt == nil && (k.ExpiresAt == nil || k.ExpiresAt.After(now))
+}

@@ -212,6 +212,21 @@ func TestLoad_ProdRequiresAdminBootstrapKey(t *testing.T) {
 	}
 }
 
+func TestLoad_AuthDisabledRejectedInProd(t *testing.T) {
+	t.Parallel()
+	_, err := Load[API](envOpts(map[string]string{"FF_ENV": "prod", "FF_ADMIN_BOOTSTRAP_KEY": "k", "FF_AUTH_DISABLED": "true"}))
+	if got := validationFields(t, err); !slices.Equal(got, []string{"FF_AUTH_DISABLED"}) {
+		t.Errorf("fields = %v, want [FF_AUTH_DISABLED]", got)
+	}
+	cfg, err := Load[API](envOpts(map[string]string{"FF_ENV": "dev", "FF_AUTH_DISABLED": "true"}))
+	if err != nil || cfg.AuthDisabled != "true" {
+		t.Errorf("dev with auth disabled = %q, %v", cfg.AuthDisabled, err)
+	}
+	if _, err := Load[API](envOpts(map[string]string{"FF_AUTH_DISABLED": "yes"})); err == nil {
+		t.Error("FF_AUTH_DISABLED=yes accepted, want oneof true false")
+	}
+}
+
 func TestLoad_ConfigFile(t *testing.T) {
 	t.Parallel()
 	t.Run("scalars of any YAML type and another service's keys", func(t *testing.T) {

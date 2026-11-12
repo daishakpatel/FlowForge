@@ -134,6 +134,12 @@ func TestRunRepo_DuplicateIdempotencyKeyIsConflict(t *testing.T) {
 	if err := create(); apperrors.CodeOf(err) != apperrors.CodeConflict {
 		t.Errorf("second create = %v, want CONFLICT", err)
 	}
+	if got, err := e.runs.GetByIdempotencyKey(t.Context(), e.pool, "k1"); err != nil || got.IdempotencyKey != "k1" || got.DefinitionID != dv.ID {
+		t.Errorf("GetByIdempotencyKey(k1) = %+v, %v", got, err)
+	}
+	if _, err := e.runs.GetByIdempotencyKey(t.Context(), e.pool, "nope"); apperrors.CodeOf(err) != apperrors.CodeNotFound {
+		t.Errorf("GetByIdempotencyKey(nope) = %v, want NOT_FOUND", err)
+	}
 }
 
 // TestTaskRepo_ConcurrentTransitionHasOneWinner: 20 transactions race READY → QUEUED on one task.
@@ -498,5 +504,61 @@ func TestRunRepo_KeysetPaginationWithEqualTimestamps(t *testing.T) {
 	}
 	if _, _, err := e.runs.List(t.Context(), e.pool, persistence.RunFilter{}, persistence.Page{Cursor: "garbage!"}); apperrors.CodeOf(err) != apperrors.CodeInvalidArgument {
 		t.Errorf("bad cursor = %v, want INVALID_ARGUMENT", err)
+	}
+}
+
+// TestAPIKeyRepo_ConcurrentRevocationKeepsAnAdmin: two transactions revoke the last two active
+// admin keys at once; the row locks serialize the "last admin" check, so exactly one succeeds
+// and one admin remains.
+func TestAPIKeyRepo_ConcurrentRevocationKeepsAnAdmin(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t)
+	keys := APIKeyRepo{}
+	ids := []string{"aaaaaaaaaaaa", "bbbbbbbbbbbb"}
+	for _, id := range append(ids, "cccccccccccc") {
+		role := "admin"
+		if id == "cccccccccccc" {
+			role = "viewer"
+		}
+		if _, err := keys.Create(t.Context(), e.pool, persistence.NewAPIKey{ID: id, Name: id, Role: role, SecretHash: []byte{1}, Salt: []byte{2}, CreatedBy: "t"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	errs := make([]error, 2)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := range 2 {
+		wg.Go(func() {
+			<-start
+			errs[i] = e.tm.WithTx(t.Context(), pgx.TxOptions{}, func(tx pgx.Tx) error { return keys.Revoke(t.Context(), tx, ids[i]) })
+		})
+	}
+	close(start)
+	wg.Wait()
+	ok, conflict := 0, 0
+	for _, err := range errs {
+		switch apperrors.CodeOf(err) {
+		case "":
+			ok++
+		case apperrors.CodeConflict:
+			conflict++
+		default:
+			t.Errorf("revoke: %v", err)
+		}
+	}
+	if ok != 1 || conflict != 1 {
+		t.Errorf("revocations: %d ok, %d CONFLICT; want 1 and 1", ok, conflict)
+	}
+	if has, err := keys.HasActiveAdmin(t.Context(), e.pool); err != nil || !has {
+		t.Errorf("HasActiveAdmin = %v, %v; want an admin left", has, err)
+	}
+	// Non-admin keys revoke freely, and revoking twice is a no-op.
+	for range 2 {
+		if err := e.tm.WithTx(t.Context(), pgx.TxOptions{}, func(tx pgx.Tx) error { return keys.Revoke(t.Context(), tx, "cccccccccccc") }); err != nil {
+			t.Errorf("revoke viewer key: %v", err)
+		}
+	}
+	if err := e.tm.WithTx(t.Context(), pgx.TxOptions{}, func(tx pgx.Tx) error { return keys.Revoke(t.Context(), tx, "dddddddddddd") }); apperrors.CodeOf(err) != apperrors.CodeNotFound {
+		t.Errorf("revoke unknown key = %v, want NOT_FOUND", err)
 	}
 }
