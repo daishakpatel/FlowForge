@@ -129,3 +129,19 @@ Format: Context → Decision → Alternatives considered → Consequences.
 - **What:** migration `0001_core.sql` adds `CREATE UNIQUE INDEX uq_tasks_original_key ON workflow_tasks(run_id, task_key) WHERE supersedes_task_id IS NULL`, recorded in `00E` §2.
 - **Why:** `UNIQUE (run_id, task_key, supersedes_task_id)` treats NULLs as distinct, so two original (non-rerun) tasks could share a key in one run. Task 02.01 §5 requires the index.
 - **Impact:** compatible extension (a new index); rerun rows (ADR-008) still reuse a key once per superseded task. No column, table or existing constraint changes. Tested by `TestSchema_Constraints`.
+
+### ADR-015 / ADR-017 amendment — 02.04 — 2026-11-11
+- **What:** two additions recorded in `00E`.
+  - `FF_AUTH_DISABLED` (`00E` §6, default `false`). It lets every request through as the dev admin until 02.05 ships API keys, and config validation rejects `true` when `FF_ENV=prod`.
+  - The error envelope's `details[]` entries gain optional `code` and `task_id` fields (`00E` §4), so `INVALID_WORKFLOW` can return each DAG issue's stable code (task 02.04 §4 and §8: `details[].code=CYCLE`).
+- **Why:** both are required by task 02.04. `apperrors.Detail` had only `field` and `message`.
+- **Impact:** compatible extension. A new optional env var with a safe default, and two optional JSON fields. No existing field, code or route changes. 02.05 keeps `FF_AUTH_DISABLED` as a dev/test-only switch (its §5). Tested by `TestLoad_AuthDisabledRejectedInProd` and `TestContract_API`.
+
+### ADR-015 amendment — 02.05 — 2026-11-11
+- **What:** two additions recorded in `00E`.
+  - `FF_API_RATE_LIMIT_RPS` (`00E` §6, default 50). It sets the per-key token bucket; the burst is 2×, and the `worker` and `ai-readonly` service roles get 4× both.
+  - The metric `flowforge_audit_write_failures_total` (`00E` §11.1).
+- **Why:**
+  - Task 02.05 names the variable and the counter.
+  - Deriving the burst and the service-role limits from one variable avoids three more variables for what the task describes as fixed relations.
+- **Impact:** compatible extension: a new optional env var with the task's default, and a new counter. Audit writes are best-effort by the task's documented decision (availability over audit completeness; `docs/api/authentication.md`), so an audit outage never fails a request. Tested by `TestLimiter_*`, `TestRateLimit_*` and `TestAudit_WriteFailureIsCountedAndRequestProceeds`.
