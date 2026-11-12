@@ -118,3 +118,32 @@ type APIKeyView struct {
 func (k APIKeyView) Active(now time.Time) bool {
 	return k.RevokedAt == nil && (k.ExpiresAt == nil || k.ExpiresAt.After(now))
 }
+
+// WorkerView is a worker_observations row.
+type WorkerView struct {
+	WorkerID    string
+	Status      string // ACTIVE | DEREGISTERED
+	KeyID       string
+	Capacity    int
+	ActiveTasks int
+	TaskTypes   []string
+	Queues      []string
+	Version     string
+	FirstSeenAt time.Time
+	LastSeenAt  time.Time
+}
+
+// Alive reports whether the worker is ACTIVE and was seen at or after liveAfter.
+func (w WorkerView) Alive(liveAfter time.Time) bool {
+	return w.Status == "ACTIVE" && !w.LastSeenAt.Before(liveAfter)
+}
+
+// TaskLogView is a stored task log line.
+type TaskLogView struct {
+	ID        int64
+	AttemptID string
+	TS        time.Time
+	Level     string
+	Message   string
+	Fields    json.RawMessage
+}

@@ -70,6 +70,17 @@ type TaskRepo interface {
 	ListByRun(ctx context.Context, q Querier, runID string) ([]TaskView, error)
 	ListByRunStatus(ctx context.Context, q Querier, runID string, status model.TaskStatus) ([]TaskView, error)
 	Transition(ctx context.Context, tx pgx.Tx, p TaskTransitionParams) error
+	// ClaimQueued row-locks up to f.Limit claimable QUEUED tasks until tx ends, skipping rows
+	// other transactions hold (task 03.01). The caller moves each one QUEUED → RUNNING in tx.
+	ClaimQueued(ctx context.Context, tx pgx.Tx, f ClaimFilter) ([]TaskView, error)
+}
+
+// ClaimFilter selects claimable tasks: QUEUED, of one of Types, in one of Queues, available at
+// Now, and not in a paused or cancel-requested run.
+type ClaimFilter struct {
+	Types, Queues []string
+	Now           time.Time
+	Limit         int
 }
 
 // AttemptRepo stores task attempts.
@@ -80,6 +91,9 @@ type AttemptRepo interface {
 	Get(ctx context.Context, q Querier, id string) (AttemptView, error)
 	ListByTask(ctx context.Context, q Querier, taskID string) ([]AttemptView, error)
 	Transition(ctx context.Context, tx pgx.Tx, p AttemptTransitionParams) error
+	// TouchRunning sets last_heartbeat_at = now on each attempt that is still RUNNING on workerID
+	// with the given fencing token (tokens[i] belongs to ids[i]) and returns the ids it touched.
+	TouchRunning(ctx context.Context, q Querier, workerID string, ids []string, tokens []int64, now time.Time) ([]string, error)
 }
 
 // EventRepo reads a run's recorded history. Events are written by events.Recorder.
@@ -226,4 +240,49 @@ type AuditEntry struct {
 	RequestID    string
 	Details      map[string]any
 	Outcome      string // ok | denied | error
+}
+
+// WorkerRepo stores worker_observations, the operational record of workers (task 03.01). Times
+// come from the API clock.
+type WorkerRepo interface {
+	// Upsert registers or refreshes w and reports false when the id is live (seen at or after
+	// liveAfter, ACTIVE) under another API key.
+	Upsert(ctx context.Context, q Querier, w WorkerRegistration, now, liveAfter time.Time) (bool, error)
+	// Touch records that the worker, registered by keyID, was seen at now; false when it is not
+	// an ACTIVE registration of keyID.
+	Touch(ctx context.Context, q Querier, workerID, keyID string, activeTasks int, now time.Time) (bool, error)
+	// Release marks the worker DEREGISTERED.
+	Release(ctx context.Context, q Querier, workerID, keyID string, now time.Time) error
+	Get(ctx context.Context, q Querier, workerID string) (WorkerView, error)
+	// Expired lists ACTIVE workers last seen before before.
+	Expired(ctx context.Context, q Querier, before time.Time) ([]string, error)
+	List(ctx context.Context, q Querier) ([]WorkerView, error)
+}
+
+// WorkerRegistration is the input of WorkerRepo.Upsert.
+type WorkerRegistration struct {
+	WorkerID  string
+	KeyID     string // API key that registered it
+	TaskTypes []string
+	Queues    []string
+	Capacity  int
+	Version   string
+}
+
+// TaskLogRepo stores task_logs (task 03.01, ADR-018).
+type TaskLogRepo interface {
+	// Insert adds lines in one statement (COPY); call it in a transaction for atomic batches.
+	Insert(ctx context.Context, q Querier, lines []NewTaskLog) error
+	Count(ctx context.Context, q Querier, attemptID string) (int, error)
+	// List returns up to limit lines with id > afterID, oldest first.
+	List(ctx context.Context, q Querier, attemptID string, afterID int64, limit int) ([]TaskLogView, error)
+}
+
+// NewTaskLog is one line to store; Message is already redacted and capped.
+type NewTaskLog struct {
+	AttemptID, TaskID, RunID string
+	TS                       time.Time
+	Level                    string // DEBUG | INFO | WARN | ERROR
+	Message                  string
+	Fields                   json.RawMessage // a JSON object or nil
 }

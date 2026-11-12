@@ -39,15 +39,16 @@ func TestPage_EffectiveLimit(t *testing.T) {
 	}
 }
 
-// TestQueries_OnlyTransitionsWriteStatus guards ADR-020: the only SQL that assigns a status
-// column is the conditional transition queries (inserts set the initial status).
+// TestQueries_OnlyTransitionsWriteStatus guards ADR-020: the only SQL that assigns the status of
+// a run, task or attempt is the conditional transition queries (inserts set the initial status).
+// Other tables' status columns, such as worker_observations', are not state machines.
 func TestQueries_OnlyTransitionsWriteStatus(t *testing.T) {
 	t.Parallel()
 	files, err := filepath.Glob("queries/*.sql")
 	if err != nil || len(files) == 0 {
 		t.Fatalf("no query files: %v", err)
 	}
-	setStatus := regexp.MustCompile(`(?is)\bUPDATE\b.*?\bSET\b(.*?)\bWHERE\b`)
+	setStatus := regexp.MustCompile(`(?is)\bUPDATE\s+(?:workflow_runs|workflow_tasks|task_attempts)\b.*?\bSET\b(.*?)\bWHERE\b`)
 	assigns := regexp.MustCompile(`(?i)(^|[\s,])status\s*=`)
 	allowed := []string{"TransitionRun", "TransitionTask", "FinishAttempt"}
 	var found []string

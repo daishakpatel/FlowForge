@@ -9,6 +9,45 @@ import (
 	"context"
 )
 
+// iteratorForInsertTaskLogs implements pgx.CopyFromSource.
+type iteratorForInsertTaskLogs struct {
+	rows                 []InsertTaskLogsParams
+	skippedFirstNextCall bool
+}
+
+func (r *iteratorForInsertTaskLogs) Next() bool {
+	if len(r.rows) == 0 {
+		return false
+	}
+	if !r.skippedFirstNextCall {
+		r.skippedFirstNextCall = true
+		return true
+	}
+	r.rows = r.rows[1:]
+	return len(r.rows) > 0
+}
+
+func (r iteratorForInsertTaskLogs) Values() ([]interface{}, error) {
+	return []interface{}{
+		r.rows[0].AttemptID,
+		r.rows[0].TaskID,
+		r.rows[0].RunID,
+		r.rows[0].Ts,
+		r.rows[0].Level,
+		r.rows[0].Message,
+		r.rows[0].Fields,
+	}, nil
+}
+
+func (r iteratorForInsertTaskLogs) Err() error {
+	return nil
+}
+
+// Per-attempt task logs (00E §2, ADR-018, task 03.01).
+func (q *Queries) InsertTaskLogs(ctx context.Context, arg []InsertTaskLogsParams) (int64, error) {
+	return q.db.CopyFrom(ctx, []string{"task_logs"}, []string{"attempt_id", "task_id", "run_id", "ts", "level", "message", "fields"}, &iteratorForInsertTaskLogs{rows: arg})
+}
+
 // iteratorForInsertTasks implements pgx.CopyFromSource.
 type iteratorForInsertTasks struct {
 	rows                 []InsertTasksParams
