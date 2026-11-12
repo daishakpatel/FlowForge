@@ -40,6 +40,36 @@ func (q *Queries) GetRun(ctx context.Context, id string) (WorkflowRun, error) {
 	return i, err
 }
 
+const getRunByIdempotencyKey = `-- name: GetRunByIdempotencyKey :one
+SELECT id, definition_id, status, input, idempotency_key, trigger_id, parent_run_id, deadline_at, cancel_requested, created_by, created_at, started_at, completed_at, leader_epoch, version FROM workflow_runs
+WHERE idempotency_key = $1
+LIMIT 1
+`
+
+// Idempotent run start (task 02.04); uses the partial unique index uq_runs_idem.
+func (q *Queries) GetRunByIdempotencyKey(ctx context.Context, idempotencyKey pgtype.Text) (WorkflowRun, error) {
+	row := q.db.QueryRow(ctx, getRunByIdempotencyKey, idempotencyKey)
+	var i WorkflowRun
+	err := row.Scan(
+		&i.ID,
+		&i.DefinitionID,
+		&i.Status,
+		&i.Input,
+		&i.IdempotencyKey,
+		&i.TriggerID,
+		&i.ParentRunID,
+		&i.DeadlineAt,
+		&i.CancelRequested,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.LeaderEpoch,
+		&i.Version,
+	)
+	return i, err
+}
+
 const insertRun = `-- name: InsertRun :one
 
 INSERT INTO workflow_runs (id, definition_id, status, input, idempotency_key, trigger_id,

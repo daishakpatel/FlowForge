@@ -15,6 +15,12 @@ SELECT * FROM workflow_runs
 WHERE id = @id
 LIMIT 1;
 
+-- name: GetRunByIdempotencyKey :one
+-- Idempotent run start (task 02.04); uses the partial unique index uq_runs_idem.
+SELECT * FROM workflow_runs
+WHERE idempotency_key = @idempotency_key
+LIMIT 1;
+
 -- name: ListRuns :many
 -- Keyset page ordered (created_at DESC, id DESC) with optional filters (00E §9); NULL means
 -- "no filter". workflow filters on the definition name.
