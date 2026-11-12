@@ -1,0 +1,133 @@
+// Worker protocol between flowforge-worker and flowforge-api (00E §8, task 03.01, ADR-004).
+// Workers pull work: Register, then loop PollTask → (Heartbeat …) → CompleteTask | FailTask.
+// Every RPC requires `authorization: Bearer ff_…` metadata with a key of role `worker`.
+// Fields are only ever added; removed fields are reserved (00C §9).
+syntax = "proto3";
+
+package worker.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/daishakpatel/flowforge/internal/gen/proto/worker/v1;workerv1";
+
+service WorkerService {
+  // Register announces a worker and what it can run. Re-registering refreshes it. A live
+  // registration of the same worker_id under another API key is ALREADY_EXISTS (CONFLICT).
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  // Heartbeat renews the worker's lease and the attempts it runs; it reports which attempts to
+  // cancel and which are stale (the worker must abort those).
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  // PollTask claims up to free_capacity tasks, waiting up to wait_ms for one to become available.
+  rpc PollTask(PollTaskRequest) returns (PollTaskResponse);
+  // CompleteTask reports success. A stale fencing token is FAILED_PRECONDITION (STALE_ATTEMPT).
+  rpc CompleteTask(CompleteTaskRequest) returns (CompleteTaskResponse);
+  // FailTask reports failure. A stale fencing token is FAILED_PRECONDITION (STALE_ATTEMPT).
+  rpc FailTask(FailTaskRequest) returns (FailTaskResponse);
+  // ShipLogs streams an attempt's log lines; limits: 1000 lines per attempt, 8 KiB per line.
+  rpc ShipLogs(stream LogLine) returns (ShipLogsResponse);
+  // Deregister removes the worker from the live set (graceful shutdown).
+  rpc Deregister(DeregisterRequest) returns (DeregisterResponse);
+}
+
+message RegisterRequest {
+  // ^[a-z0-9][a-z0-9-]{2,62}$, chosen by the worker.
+  string worker_id = 1;
+  repeated string task_types = 2;
+  repeated string queues = 3;
+  int32 capacity = 4;
+  string version = 5;
+}
+
+message RegisterResponse {
+  int64 lease_ttl_ms = 1;
+  int64 heartbeat_interval_ms = 2;
+}
+
+message RunningAttempt {
+  string attempt_id = 1;
+  int64 fencing_token = 2;
+  // 0..1, informational.
+  double progress = 3;
+}
+
+message HeartbeatRequest {
+  string worker_id = 1;
+  repeated RunningAttempt running = 2;
+}
+
+message HeartbeatResponse {
+  // Attempts the worker should cancel (run cancelled or paused by an operator).
+  repeated string cancel_attempt_ids = 1;
+  int64 lease_ttl_ms = 2;
+  google.protobuf.Timestamp server_time = 3;
+  // Attempts that are no longer RUNNING with that token: abort them, do not report them.
+  repeated string stale_attempt_ids = 4;
+}
+
+message PollTaskRequest {
+  string worker_id = 1;
+  int32 free_capacity = 2;
+  // At most 30000; 0 means the default 10000.
+  int32 wait_ms = 3;
+}
+
+message PollTaskResponse {
+  // At most free_capacity tasks; empty when nothing became available within wait_ms.
+  repeated Task tasks = 1;
+}
+
+message Task {
+  string task_id = 1;
+  string attempt_id = 2;
+  int32 attempt_number = 3;
+  string task_type = 4;
+  bytes input_json = 5;
+  // The server's deadline for this attempt; the server's timeout decision is final (ADR-021).
+  google.protobuf.Timestamp deadline = 6;
+  int64 fencing_token = 7;
+  // task_id:attempt_number; handlers with external effects must use it (ADR-007).
+  string idempotency_key = 8;
+  string correlation_id = 9;
+  string traceparent = 10;
+}
+
+message CompleteTaskRequest {
+  string attempt_id = 1;
+  int64 fencing_token = 2;
+  // At most 256 KiB; larger is RESOURCE_EXHAUSTED and the attempt fails (RESULT_TOO_LARGE).
+  bytes result_json = 3;
+}
+
+message CompleteTaskResponse {}
+
+message FailTaskRequest {
+  string attempt_id = 1;
+  int64 fencing_token = 2;
+  string error_code = 3;
+  string message = 4;
+  bool retryable = 5;
+}
+
+message FailTaskResponse {}
+
+message LogLine {
+  string attempt_id = 1;
+  int64 fencing_token = 2;
+  google.protobuf.Timestamp ts = 3;
+  // DEBUG | INFO | WARN | ERROR (anything else is stored as INFO).
+  string level = 4;
+  string message = 5;
+  // A JSON object, optional.
+  bytes fields_json = 6;
+}
+
+message ShipLogsResponse {
+  int32 accepted = 1;
+  int32 dropped = 2;
+}
+
+message DeregisterRequest {
+  string worker_id = 1;
+}
+
+message DeregisterResponse {}
