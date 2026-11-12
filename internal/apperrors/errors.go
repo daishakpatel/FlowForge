@@ -11,8 +11,11 @@ import (
 )
 
 // Detail is one entry of the error envelope's details list, for example one failed DAG check.
+// Code and TaskID carry a DAG validation issue's stable code and task (task 02.04).
 type Detail struct {
 	Field   string `json:"field,omitempty"`
+	Code    string `json:"code,omitempty"`
+	TaskID  string `json:"task_id,omitempty"`
 	Message string `json:"message"`
 }
 
