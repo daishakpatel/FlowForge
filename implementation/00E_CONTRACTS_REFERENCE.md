@@ -261,7 +261,7 @@ Limits: ≤ 500 tasks, ids `^[a-z][a-z0-9_-]{0,62}$`, `timeout_seconds` 1–8640
 | NOT_LEADER | — | FAILED_PRECONDITION | Raft/leader redirect (internal; carries `leader_hint`) |
 | NO_QUORUM | — | UNAVAILABLE | Raft write without quorum |
 
-Error envelope: `{"error":{"code":"…","message":"…","details":[…],"request_id":"req_…"}}`.
+Error envelope: `{"error":{"code":"…","message":"…","details":[…],"request_id":"req_…"}}`. `details` is always an array; each entry is `{"message":"…"}` with optional `field`, `code` (a stable issue code such as `CYCLE` for `INVALID_WORKFLOW`) and `task_id` (02.04).
 
 ## 5. Raft KV contract
 
@@ -292,6 +292,8 @@ Election tick 10 × 100 ms = 1 s heartbeat tick 1 (100 ms); `PreVote` and `Check
 | `FF_PG_DSN` | `postgres://flowforge:flowforge@localhost:5432/flowforge?sslmode=disable` | api, scheduler, flowforge-migrate |
 | `FF_API_HTTP_ADDR` / `FF_API_GRPC_ADDR` | `:8080` / `:9090` | api |
 | `FF_ADMIN_BOOTSTRAP_KEY` | (required in prod) | api |
+| `FF_AUTH_DISABLED` | `false` (`true` only in `dev`/`test`; every request runs as the dev admin) | api |
+| `FF_API_RATE_LIMIT_RPS` | `50` (per API key; burst 2×; `worker` and `ai-readonly` keys 4×) | api |
 | `FF_RAFT_ENDPOINTS` | `raft-1:7000,raft-2:7000,raft-3:7000` | api, scheduler |
 | `FF_RAFT_NODE_ID`, `FF_RAFT_PEERS`, `FF_RAFT_DATA_DIR`, `FF_RAFT_CLIENT_ADDR`, `FF_RAFT_PEER_ADDR` | — | raft |
 | `FF_SCHED_TICK` | `500ms` | scheduler |
@@ -389,6 +391,7 @@ Metric names (prefix per component; labels low-cardinality only: `queue`, `task_
 ### 11.1 Metric additions and canonical names (supersede any conflicting name above)
 - Streaming metrics use the prefix `flowforge_stream_*` (replacing the `marketdata_*` names): `flowforge_stream_duplicates_total`, `flowforge_stream_late_events_total{disposition}`, `flowforge_stream_lag{partition}`, `flowforge_stream_freshness_seconds{symbol}` (symbol label only when the configured universe is at most 50), `flowforge_stream_backpressure_active`, `flowforge_stream_db_write_seconds`; producer: `flowforge_producer_events_total{result}`, `flowforge_producer_publish_latency_seconds`.
 - Outbox: `flowforge_outbox_backlog`, `flowforge_outbox_oldest_age_seconds`, `flowforge_outbox_publish_failures_total`.
+- Audit: `flowforge_audit_write_failures_total` (02.05; audit rows that could not be written while the request proceeded).
 - Coordination: `flowforge_leader_changes_total`, `flowforge_raft_leader_changes_total`.
 - Tracing: dropped-span counter `flowforge_otel_dropped_spans_total`.
 - `metrics/catalogue.yaml` (task 08.02) is generated from this section and is the machine-checked source after that task.
