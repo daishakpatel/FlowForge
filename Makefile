@@ -4,6 +4,11 @@ SHELL := /bin/bash
 MODULE                := github.com/daishakpatel/flowforge
 GOLANGCI_LINT_VERSION := 2.15.0
 SQLC_VERSION          := 1.31.1
+# Protobuf toolchain (task 03.01): buf and the two Go plugins, installed with `go install`.
+BUF_VERSION                := 1.75.0
+PROTOC_GEN_GO_VERSION      := 1.36.12
+PROTOC_GEN_GO_GRPC_VERSION := 1.6.2
+GOBIN_DIR                  := $(shell go env GOPATH)/bin
 # sqlc from PATH, else where `go install` puts it.
 SQLC                  ?= $(shell command -v sqlc 2>/dev/null || echo $(shell go env GOPATH)/bin/sqlc)
 DB                    ?= flowforge
@@ -13,7 +18,7 @@ LDFLAGS               := -X $(MODULE)/internal/version.version=$(VERSION) -X $(M
 COVER_PROFILE         := coverage.out
 COMPOSE               := docker compose --profile core --profile streaming
 
-.PHONY: help build test test-race test-integration lint lint-selftest fmt tidy cover cover-check proto sqlc sqlc-check migrate-up migrate-status openapi-check clean dev-up dev-down dev-reset psql psql-md logs
+.PHONY: help build test test-race test-integration lint lint-selftest fmt tidy cover cover-check proto proto-check proto-breaking sqlc sqlc-check migrate-up migrate-status openapi-check clean dev-up dev-down dev-reset psql psql-md logs
 
 help: ## List targets
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-18s %s\n", $$1, $$2}'
@@ -51,8 +56,20 @@ cover: ## Coverage profile and per-function summary
 cover-check: ## Fail if a gated package tree is below 70% coverage (NFR-TEST-01)
 	scripts/dev/cover-check.sh
 
-proto: ## Generate protobuf code (placeholder until 03.01/04.01)
-	@echo "proto: not yet configured (task 03.01 / 04.01)"
+proto: ## Lint protos and generate Go into internal/gen/proto (buf $(BUF_VERSION), pinned plugins)
+	@export PATH="$(GOBIN_DIR):$$PATH"; \
+	buf --version 2>/dev/null | grep -qx "$(BUF_VERSION)" || { echo "proto: need buf $(BUF_VERSION): go install github.com/bufbuild/buf/cmd/buf@v$(BUF_VERSION)"; exit 1; }; \
+	protoc-gen-go --version 2>/dev/null | grep -qx "protoc-gen-go v$(PROTOC_GEN_GO_VERSION)" || { echo "proto: need protoc-gen-go v$(PROTOC_GEN_GO_VERSION): go install google.golang.org/protobuf/cmd/protoc-gen-go@v$(PROTOC_GEN_GO_VERSION)"; exit 1; }; \
+	protoc-gen-go-grpc --version 2>/dev/null | grep -qx "protoc-gen-go-grpc $(PROTOC_GEN_GO_GRPC_VERSION)" || { echo "proto: need protoc-gen-go-grpc v$(PROTOC_GEN_GO_GRPC_VERSION): go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v$(PROTOC_GEN_GO_GRPC_VERSION)"; exit 1; }; \
+	buf lint && buf generate
+
+proto-check: proto ## Fail if generated protobuf code differs from what is committed (CI drift check)
+	@git diff --exit-code -- internal/gen && test -z "$$(git status --porcelain -- internal/gen)" \
+		|| { echo "proto-check: internal/gen is stale; run make proto and commit"; exit 1; }
+
+proto-breaking: ## buf breaking against origin/main (skipped while main has no protos)
+	@if git cat-file -e origin/main:proto 2>/dev/null; then PATH="$(GOBIN_DIR):$$PATH" buf breaking --against '.git#ref=origin/main,subdir=proto'; \
+	else echo "proto-breaking: origin/main has no proto/ yet, nothing to compare"; fi
 
 sqlc: ## Generate internal/persistence/sqlcgen from migrations + queries (sqlc $(SQLC_VERSION))
 	@$(SQLC) version 2>/dev/null | grep -q "v$(SQLC_VERSION)" || { echo "sqlc: need v$(SQLC_VERSION): go install github.com/sqlc-dev/sqlc/cmd/sqlc@v$(SQLC_VERSION)"; exit 1; }

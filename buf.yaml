@@ -1,0 +1,15 @@
+# buf configuration (task 03.01). Protos live under proto/; `make proto` generates Go into
+# internal/gen/proto, and CI fails when the committed code drifts (`make proto-check`).
+version: v2
+modules:
+  - path: proto
+lint:
+  use:
+    - STANDARD
+  ignore_only:
+    # 00E §8 names the ShipLogs stream message LogLine, not ShipLogsRequest.
+    RPC_REQUEST_STANDARD_NAME:
+      - proto/worker/v1/worker.proto
+breaking:
+  use:
+    - FILE
