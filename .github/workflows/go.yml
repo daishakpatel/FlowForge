@@ -55,6 +55,22 @@ jobs:
       - run: make test-integration
       - run: make openapi-check
 
+  proto:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # buf breaking compares against origin/main
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      # Same versions as BUF_VERSION and the PROTOC_GEN_* versions in the Makefile.
+      - run: go install github.com/bufbuild/buf/cmd/buf@v1.75.0
+      - run: go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.12
+      - run: go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2
+      - run: make proto-check
+      - run: make proto-breaking
+
   sqlc-drift:
     runs-on: ubuntu-latest
     steps:

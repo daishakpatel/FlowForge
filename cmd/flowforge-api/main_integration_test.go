@@ -44,9 +44,9 @@ func TestRun_RefusesToStartWhenSchemaIsBehind(t *testing.T) {
 func TestRun_ServesAndStopsCleanly(t *testing.T) {
 	db := testutil.NewFlowforgeDB(t)
 	addr := make(chan string, 1)
-	listen := func(ctx context.Context, network, _ string) (net.Listener, error) {
+	listen := func(ctx context.Context, network, a string) (net.Listener, error) {
 		ln, err := (&net.ListenConfig{}).Listen(ctx, network, "127.0.0.1:0")
-		if err == nil {
+		if err == nil && a == ":8080" { // the HTTP listener; the gRPC one (:9090) is not reported
 			addr <- ln.Addr().String()
 		}
 		return ln, err
@@ -95,9 +95,9 @@ func TestRun_ServesAndStopsCleanly(t *testing.T) {
 func startAPI(t *testing.T, env map[string]string) (base string, logs *bytes.Buffer, stop func()) {
 	t.Helper()
 	addr := make(chan string, 1)
-	listen := func(ctx context.Context, network, _ string) (net.Listener, error) {
+	listen := func(ctx context.Context, network, a string) (net.Listener, error) {
 		ln, err := (&net.ListenConfig{}).Listen(ctx, network, "127.0.0.1:0")
-		if err == nil {
+		if err == nil && a == ":8080" { // the HTTP listener; the gRPC one (:9090) is not reported
 			addr <- ln.Addr().String()
 		}
 		return ln, err

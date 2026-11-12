@@ -371,6 +371,47 @@ paths:
         '429': {$ref: '#/components/responses/RateLimited'}
         default: {$ref: '#/components/responses/Error'}
 
+  /api/v1/workers:
+    get:
+      operationId: listWorkers
+      summary: Every known worker (not paginated; next_cursor is always null)
+      responses:
+        '200':
+          description: All workers, by id.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WorkerList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/attempts/{attempt_id}/logs:
+    get:
+      operationId: listAttemptLogs
+      summary: An attempt's log lines, oldest first
+      parameters:
+        - name: attempt_id
+          in: path
+          required: true
+          schema: {type: string}
+        - name: after_id
+          in: query
+          description: Return lines with an id above this one (the previous page's next_cursor).
+          schema: {type: integer, format: int64, minimum: 0}
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: One page; next_cursor is the after_id of the next page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LogLineList'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        default: {$ref: '#/components/responses/Error'}
+
 components:
   securitySchemes:
     ApiKeyAuth:
@@ -763,3 +804,50 @@ components:
     Role:
       type: string
       enum: [viewer, operator, admin, worker, ai-readonly]
+    Worker:
+      type: object
+      additionalProperties: false
+      required: [worker_id, status, capacity, active_tasks, task_types, queues, first_seen_at, last_seen_at]
+      properties:
+        worker_id: {type: string}
+        status: {type: string, enum: [ACTIVE, LOST, DEREGISTERED], description: 'LOST: ACTIVE but not seen within FF_WORKER_LEASE_TTL.'}
+        capacity: {type: integer}
+        active_tasks: {type: integer}
+        task_types:
+          type: array
+          items: {type: string}
+        queues:
+          type: array
+          items: {type: string}
+        version: {type: string}
+        first_seen_at: {type: string, format: date-time}
+        last_seen_at: {type: string, format: date-time}
+    WorkerList:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Worker'}
+        next_cursor: {$ref: '#/components/schemas/NextCursor'}
+    LogLine:
+      type: object
+      additionalProperties: false
+      required: [id, attempt_id, ts, level, message]
+      properties:
+        id: {type: integer, format: int64}
+        attempt_id: {type: string}
+        ts: {type: string, format: date-time}
+        level: {type: string, enum: [DEBUG, INFO, WARN, ERROR]}
+        message: {type: string, description: 'Redacted; at most 8 KiB (longer lines end in "…[truncated]").'}
+        fields: {type: object}
+    LogLineList:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/LogLine'}
+        next_cursor: {$ref: '#/components/schemas/NextCursor'}
