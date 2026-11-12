@@ -337,8 +337,8 @@ Market tick payload (`market.ticks` value, schema `market_tick.v1`): `{event_id,
 ```proto
 service WorkerService {
   rpc Register(RegisterRequest) returns (RegisterResponse);          // worker_id, task_types[], queues[], capacity, version
-  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);       // worker_id, running[{attempt_id, fencing_token, progress}] → {cancel_attempt_ids[], lease_ttl_ms}
-  rpc PollTask(PollTaskRequest) returns (PollTaskResponse);          // worker_id, free_capacity, wait_ms (≤30000) → optional Task
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);       // worker_id, running[{attempt_id, fencing_token, progress}] → {cancel_attempt_ids[], lease_ttl_ms, server_time, stale_attempt_ids[]}
+  rpc PollTask(PollTaskRequest) returns (PollTaskResponse);          // worker_id, free_capacity, wait_ms (≤30000) → tasks[] (at most free_capacity; empty on timeout)
   rpc CompleteTask(CompleteTaskRequest) returns (CompleteTaskResponse); // attempt_id, fencing_token, result_json
   rpc FailTask(FailTaskRequest) returns (FailTaskResponse);          // attempt_id, fencing_token, error_code, message, retryable
   rpc ShipLogs(stream LogLine) returns (ShipLogsResponse);           // attempt_id, fencing_token, ts, level, message, fields
@@ -392,6 +392,7 @@ Metric names (prefix per component; labels low-cardinality only: `queue`, `task_
 - Streaming metrics use the prefix `flowforge_stream_*` (replacing the `marketdata_*` names): `flowforge_stream_duplicates_total`, `flowforge_stream_late_events_total{disposition}`, `flowforge_stream_lag{partition}`, `flowforge_stream_freshness_seconds{symbol}` (symbol label only when the configured universe is at most 50), `flowforge_stream_backpressure_active`, `flowforge_stream_db_write_seconds`; producer: `flowforge_producer_events_total{result}`, `flowforge_producer_publish_latency_seconds`.
 - Outbox: `flowforge_outbox_backlog`, `flowforge_outbox_oldest_age_seconds`, `flowforge_outbox_publish_failures_total`.
 - Audit: `flowforge_audit_write_failures_total` (02.05; audit rows that could not be written while the request proceeded).
+- Worker gRPC: `flowforge_grpc_requests_total{method,code}`, `flowforge_grpc_request_duration_seconds{method}` (03.01).
 - Coordination: `flowforge_leader_changes_total`, `flowforge_raft_leader_changes_total`.
 - Tracing: dropped-span counter `flowforge_otel_dropped_spans_total`.
 - `metrics/catalogue.yaml` (task 08.02) is generated from this section and is the machine-checked source after that task.

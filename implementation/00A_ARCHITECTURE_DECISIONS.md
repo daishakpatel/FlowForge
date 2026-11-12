@@ -145,3 +145,13 @@ Format: Context → Decision → Alternatives considered → Consequences.
   - Task 02.05 names the variable and the counter.
   - Deriving the burst and the service-role limits from one variable avoids three more variables for what the task describes as fixed relations.
 - **Impact:** compatible extension: a new optional env var with the task's default, and a new counter. Audit writes are best-effort by the task's documented decision (availability over audit completeness; `docs/api/authentication.md`), so an audit outage never fails a request. Tested by `TestLimiter_*`, `TestRateLimit_*` and `TestAudit_WriteFailureIsCountedAndRequestProceeds`.
+
+### ADR-004 amendment — 03.01 — 2026-11-11
+- **What:** three changes recorded in `00E`.
+  - `00E` §8: `PollTask` returns `tasks[]`, at most `free_capacity` (was "optional Task").
+  - `00E` §8: `HeartbeatResponse` adds `server_time` and `stale_attempt_ids`.
+  - `00E` §11.1: the metrics `flowforge_grpc_requests_total{method,code}` and `flowforge_grpc_request_duration_seconds{method}`.
+- **Why:**
+  - Task 03.01 claims `LIMIT $free` and guarantees "never more than `free_capacity` tasks per poll". 03.03's runtime polls with `free_capacity = capacity - active`, which only makes sense if a poll can return several tasks.
+  - Task 03.01 §4 specifies the heartbeat fields and a metrics interceptor.
+- **Impact:** compatible. The proto did not exist before this task, so no client depended on the singular shape. Fields are additive, and the metrics are new. Tested by `TestClaim_ExactlyOnceUnderRace` and `TestHeartbeat_StaleAndCancelled`.

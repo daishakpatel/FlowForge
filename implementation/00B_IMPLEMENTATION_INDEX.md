@@ -498,7 +498,7 @@ Tick when the task's completion report exists and all acceptance criteria are me
 
 **Phase 03 — Scheduler, Workers and Durable Execution**
 
-- [ ] `03.01` Worker gRPC protocol and WorkerService (claim, heartbeat, complete, fail, logs) — `phase-03-scheduler-workers/03.01_worker_grpc_protocol_service.md`
+- [x] `03.01` Worker gRPC protocol and WorkerService (claim, heartbeat, complete, fail, logs) — `phase-03-scheduler-workers/03.01_worker_grpc_protocol_service.md`
 - [ ] `03.02` Scheduler core: readiness, concurrency limits, run lifecycle loop — `phase-03-scheduler-workers/03.02_scheduler_core.md`
 - [ ] `03.03` Worker runtime and handler SDK — `phase-03-scheduler-workers/03.03_worker_runtime.md`
 - [ ] `03.04` Retries, timeouts, worker-loss recovery and crash-consistent loops — `phase-03-scheduler-workers/03.04_retry_timeout_recovery.md`

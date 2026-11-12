@@ -101,6 +101,7 @@ func newAPIEnv(t *testing.T) *apiEnv {
 	clk := deps.Clock.(*clock.Fake)
 	authn := auth.NewKeyAuthenticator(pool, pg.APIKeyRepo{}, clk)
 	deps.Auth, deps.DB, deps.Tx, deps.APIKeys, deps.Audit = authn, pool, runs.Tx, pg.APIKeyRepo{}, pg.AuditRepo{}
+	deps.Workers, deps.Logs, deps.WorkerLeaseTTL = pg.WorkerRepo{}, pg.TaskLogRepo{}, 15*time.Second
 	raw, err := NewRouter(deps)
 	if err != nil {
 		t.Fatal(err)
@@ -299,6 +300,28 @@ func TestContract_API(t *testing.T) {
 	}
 	code, _, _ = do("GET", "/api/v1/tasks/task_missing/attempts", nil)
 	want(t, code, 404, "attempts of a missing task")
+
+	// Workers and attempt logs (03.01).
+	code, _, _ = do("GET", "/api/v1/workers", nil)
+	want(t, code, 200, "list workers")
+	_, body, _ = do("GET", "/api/v1/tasks/"+taskID+"/attempts", nil)
+	attID := decodeBody[listResponse[attemptResponse]](t, body).Items[0].ID
+	err = pg.TaskLogRepo{}.Insert(t.Context(), e.pool, []persistence.NewTaskLog{{
+		AttemptID: attID, TaskID: taskID, RunID: run.ID, TS: time.Now(), Level: "INFO", Message: "hello", //nolint:forbidigo // test fixture
+		Fields: []byte(`{"k":1}`),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, body, _ = do("GET", "/api/v1/attempts/"+attID+"/logs?limit=1", nil)
+	want(t, code, 200, "attempt logs")
+	if l := decodeBody[listResponse[logLineResponse]](t, body); len(l.Items) != 1 || l.Items[0].Message != "hello" || l.NextCursor == nil {
+		t.Errorf("attempt logs = %+v", l)
+	}
+	code, _, _ = do("GET", "/api/v1/attempts/"+attID+"/logs?after_id=-1", nil)
+	want(t, code, 400, "negative after_id")
+	code, _, _ = do("GET", "/api/v1/attempts/att_missing/logs", nil)
+	want(t, code, 404, "logs of a missing attempt")
 
 	// API keys.
 	code, body, h = do("POST", "/api/v1/api-keys", []byte(`{"name":"ci","role":"operator"}`))

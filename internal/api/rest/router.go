@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/prometheus/client_golang/prometheus"
@@ -39,6 +40,11 @@ type Deps struct {
 	APIKeys      persistence.APIKeyRepo
 	Audit        persistence.AuditRepo
 	RateLimitRPS float64 // per key; burst is twice this (FF_API_RATE_LIMIT_RPS)
+
+	// Task 03.01: workers and task logs.
+	Workers        persistence.WorkerRepo
+	Logs           persistence.TaskLogRepo
+	WorkerLeaseTTL time.Duration // FF_WORKER_LEASE_TTL; older ACTIVE workers are reported LOST
 }
 
 type handlers struct {
@@ -49,6 +55,9 @@ type handlers struct {
 	keys      persistence.APIKeyRepo
 	auth      auth.Authenticator
 	clock     clock.Clock
+	workers   persistence.WorkerRepo
+	logs      persistence.TaskLogRepo
+	leaseTTL  time.Duration
 }
 
 // NewRouter builds the API router. Every request passes RequestID → Recover → Logging →
@@ -65,7 +74,8 @@ func NewRouter(d Deps) (chi.Router, error) {
 	if err != nil {
 		return nil, err
 	}
-	h := &handlers{workflows: d.Workflows, runs: d.Runs, db: d.DB, tx: d.Tx, keys: d.APIKeys, auth: d.Auth, clock: d.Clock}
+	h := &handlers{workflows: d.Workflows, runs: d.Runs, db: d.DB, tx: d.Tx, keys: d.APIKeys, auth: d.Auth, clock: d.Clock,
+		workers: d.Workers, logs: d.Logs, leaseTTL: d.WorkerLeaseTTL}
 	acl := routeACL()
 	lim := newLimiter(d.Clock, d.RateLimitRPS, 2*d.RateLimitRPS)
 
@@ -101,6 +111,8 @@ func NewRouter(d Deps) (chi.Router, error) {
 			r.Post("/api-keys", h.createAPIKey)
 			r.Get("/api-keys", h.listAPIKeys)
 			r.Delete("/api-keys/{key_id}", h.revokeAPIKey)
+			r.Get("/workers", h.listWorkers)
+			r.Get("/attempts/{attempt_id}/logs", h.listAttemptLogs)
 		})
 	})
 	return r, nil

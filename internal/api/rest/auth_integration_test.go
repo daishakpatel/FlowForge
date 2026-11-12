@@ -20,11 +20,12 @@ func TestRBAC_Matrix(t *testing.T) {
 	e := newAPIEnv(t)
 	c := newContract(t)
 	acl := routeACL()
-	checked := 0
+	checked, ops := 0, 0
 	for _, s := range c.operations() {
 		if !strings.HasPrefix(s.path, "/api/v1/") {
 			continue
 		}
+		ops++
 		need := requiredRole(acl, s.method, s.path)
 		for _, role := range auth.Roles() {
 			code := c.do(t, e.raw, s.method, s.samplePath(), nil, e.bearer(role)...).Code
@@ -34,8 +35,8 @@ func TestRBAC_Matrix(t *testing.T) {
 			checked++
 		}
 	}
-	if checked != 14*len(auth.Roles()) {
-		t.Errorf("checked %d (role, operation) pairs, want %d", checked, 14*len(auth.Roles()))
+	if ops < 16 || checked != ops*len(auth.Roles()) {
+		t.Errorf("checked %d (role, operation) pairs over %d operations", checked, ops)
 	}
 }
 
