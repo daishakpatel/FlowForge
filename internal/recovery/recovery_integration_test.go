@@ -79,8 +79,10 @@ func TestTimeout_ServerDecidesAndLateReportIsStale(t *testing.T) {
 	run, ids := e.startRun(t, taskJSON("a", 2, 1000, 1000, 1))
 	once(t, e.decide)
 	first := w.mustPoll(t, 1)[0]
-	e.syncClock(t) // the deadline is the database's claim time + 1 s
-	e.clock.Advance(900 * time.Millisecond)
+	// The deadline is the database's claim time + 1 s; set the clock from it, not from a later
+	// now(), which under load can already be past the 100 ms margin.
+	claimed, _ := e.srv.Attempt(t, ids["a"])
+	e.clock.Set(claimed.DeadlineAt.Add(-100 * time.Millisecond))
 	once(t, e.timeouts)
 	if a, _ := e.srv.Attempt(t, ids["a"]); a.Status != model.AttemptRunning {
 		t.Fatalf("timed out before the deadline: %s", a.Status)
