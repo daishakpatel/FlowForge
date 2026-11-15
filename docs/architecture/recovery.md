@@ -101,4 +101,4 @@ Without the tag, `failpoint.Inject` is a no-op that the compiler removes.
 - **Queue wait doesn't count toward the timeout.** A task never times out while QUEUED.
 - **Recovery reacts in ticks.** Detection is bounded by the lease TTL plus two recovery ticks, not immediate.
 - **Database outage test:** it cuts the scheduler's connection through a TCP proxy rather than stopping Postgres, because other tests share the container. The loops see the same refused and dropped connections.
-- **Cancellation is a seam for now.** It is only honoured as "don't retry into a cancel-requested run"; 03.05 implements cancellation itself.
+- **Cancellation** is described in [run control](run-control.md): a cancel-requested run's failures are cancelled rather than retried, and its RUNNING attempts are forced when the grace runs out.

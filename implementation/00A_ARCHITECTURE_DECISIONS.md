@@ -188,3 +188,21 @@ Format: Context → Decision → Alternatives considered → Consequences.
   - Compatible. Without `AvailableAt` the old database-clock behavior is unchanged.
   - In production every service runs on an NTP-synced host clock, so the two time bases differ only by skew. Retry delays are in seconds, so that skew cannot reorder them.
   - Tested by `TestRetry_BackoffOnTheFakeClock`, `TestRetryOutcomeHandler`, `TestRunTicking_BacksOffAndRecovers` and `TestLoops_SurviveDatabaseOutage`.
+
+### ADR-020 / ADR-007 amendment — 03.05 — 2026-11-15
+- **What:**
+  - **`00E` §3.3:** three run transitions, CREATED → CANCELLED, PAUSED → CANCELLED and PAUSED → FAILED.
+  - **`00E` §6:** `FF_CANCEL_GRACE` (`30s`, read by the API).
+  - **Event payload:** `run.failed` carries an optional `reason` (`WORKFLOW_TIMEOUT`).
+  - **Worker-reported cancellation:** `FailTask(error_code=CANCELLED)` now ends the attempt `CANCELLED` instead of `FAILED`.
+  - **Mechanism:** a cancel request shortens the run's existing `deadline_at` to `now + FF_CANCEL_GRACE`, or to `now` with `force`. `TimeoutLoop` force-cancels at the run deadline. No new column.
+- **Why:**
+  - Task 03.05 cancels from CREATED and PAUSED and enforces the workflow deadline while PAUSED, and `00E` had none of those moves.
+  - It also specifies attempt and task `CANCELLED` for a worker that honours a cancel.
+  - Reusing the deadline gives the timeout and the cancel grace a single enforcement point. It avoids a migration and a change to the tests that pin the migration count.
+- **Impact:**
+  - **Compatible:** transitions and an optional field are added and nothing is removed; existing runs behave as before.
+  - **Breaking-looking but not breaking:** a cancelled run's `deadline_at` reads as the grace's end, not the original workflow deadline. Nothing depends on the original after a cancel.
+  - **Changed tests:** `transitions_test.go` (the `00E` copy and one event case) and 03.03's `TestWorker_ServerCancellation`, which now expects an attempt CANCELLED instead of FAILED.
+  - **Tested by:** `TestCancel_*`, `TestPause_RunningFinishesNothingNewUntilResume`, `TestWorkflowTimeout_FailsRunAndCancelsTasks`, `TestProcessRun_CancelRequested`, `TestTimeoutLoop_EndsOverdueRuns` and `TestContract_API`.
+
