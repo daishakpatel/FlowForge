@@ -1,6 +1,6 @@
 # Worker protocol
 
-How workers get tasks from `flowforge-api` and report back (task 03.01, ADR-003, ADR-004, ADR-007, ADR-021). The contract is [`proto/worker/v1/worker.proto`](../../proto/worker/v1/worker.proto) (shape: `00E` §8); `make proto` generates `internal/gen/proto/worker/v1`, and the server is `internal/workerapi`. The API serves it over gRPC on `FF_API_GRPC_ADDR` (`:9090`).
+How workers get tasks from `flowforge-api` and report back (task 03.01, ADR-003, ADR-004, ADR-007, ADR-021). The worker side (`flowforge-worker` and the handler SDK) is in [handlers](handlers.md). The contract is [`proto/worker/v1/worker.proto`](../../proto/worker/v1/worker.proto) (shape: `00E` §8); `make proto` generates `internal/gen/proto/worker/v1`, and the server is `internal/workerapi`. The API serves it over gRPC on `FF_API_GRPC_ADDR` (`:9090`).
 
 ```mermaid
 sequenceDiagram

@@ -303,6 +303,9 @@ Election tick 10 × 100 ms = 1 s heartbeat tick 1 (100 ms); `PreVote` and `Check
 | `FF_LEADER_TTL` / `FF_LEADER_RENEW` | `10s` / `3s` | scheduler |
 | `FF_WORKER_LEASE_TTL` / `FF_WORKER_HEARTBEAT` | `15s` / `5s` | api, worker |
 | `FF_WORKER_ID`, `FF_WORKER_QUEUES`, `FF_WORKER_CAPACITY`, `FF_API_GRPC_TARGET`, `FF_WORKER_TOKEN` | — | worker |
+| `FF_WORKER_HTTP_ADDR` | `:8082` (`/metrics`, `/healthz`, `/readyz`) | worker |
+| `FF_WORKER_SHUTDOWN_GRACE` | `30s` | worker |
+| `FF_WORKER_ENABLE_CRASH_HANDLER` | `false` (`true` rejected in `prod`; registers the `crash` chaos handler) | worker |
 | `FF_KAFKA_BROKERS` | `localhost:9092` | relay, worker, processor |
 | `FF_MD_PG_DSN` | `postgres://md:md@localhost:5433/marketdata?sslmode=disable` | processor, api(analytics), flowforge-migrate |
 | `FF_AI_URL`, `FF_AI_TOKEN` | `http://ai-ops:8000` | worker |
@@ -396,6 +399,7 @@ Metric names (prefix per component; labels low-cardinality only: `queue`, `task_
 - Outbox: `flowforge_outbox_backlog`, `flowforge_outbox_oldest_age_seconds`, `flowforge_outbox_publish_failures_total`.
 - Audit: `flowforge_audit_write_failures_total` (02.05; audit rows that could not be written while the request proceeded).
 - Worker gRPC: `flowforge_grpc_requests_total{method,code}`, `flowforge_grpc_request_duration_seconds{method}` (03.01).
+- Worker runtime (03.03): `flowforge_worker_task_outcomes_total{outcome}` (`succeeded`, `failed`, `cancelled`, `shutdown`, `stale`, `report_failed`), `flowforge_worker_log_lines_dropped_total`.
 - Coordination: `flowforge_leader_changes_total`, `flowforge_raft_leader_changes_total`.
 - Tracing: dropped-span counter `flowforge_otel_dropped_spans_total`.
 - `metrics/catalogue.yaml` (task 08.02) is generated from this section and is the machine-checked source after that task.

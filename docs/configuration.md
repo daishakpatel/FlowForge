@@ -77,6 +77,9 @@ Defaults are dev-only. "—" means there is no default.
 | `FF_WORKER_CAPACITY` | — | positive | `Worker` |
 | `FF_API_GRPC_TARGET` | — | required, addr | `Worker` |
 | `FF_WORKER_TOKEN` | — | secret | `Worker` |
+| `FF_WORKER_HTTP_ADDR` | `:8082` | addr; serves `/metrics`, `/healthz`, `/readyz` | `Worker` |
+| `FF_WORKER_SHUTDOWN_GRACE` | `30s` | positive; running attempts may finish this long after SIGTERM | `Worker` |
+| `FF_WORKER_ENABLE_CRASH_HANDLER` | `false` | oneof `true false`; `true` rejected when `FF_ENV=prod` | `Worker` |
 | `FF_AI_URL` | `http://ai-ops:8000` | url | `Worker` |
 | `FF_AI_TOKEN` | — | secret | `Worker` |
 | `FF_RAFT_NODE_ID` | — | positive (uint64, as the etcd Raft library requires) | `Raft` |

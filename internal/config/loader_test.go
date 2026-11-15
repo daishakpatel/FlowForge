@@ -352,3 +352,23 @@ func TestLoad_QueueLimits(t *testing.T) {
 		}
 	}
 }
+
+func TestLoad_WorkerShutdownAndCrashHandler(t *testing.T) {
+	t.Parallel()
+	base := map[string]string{"FF_WORKER_ID": "w-1", "FF_WORKER_QUEUES": "default", "FF_WORKER_CAPACITY": "2", "FF_API_GRPC_TARGET": "localhost:9090"}
+	w, err := Load[Worker](envOpts(base))
+	if err != nil || w.ShutdownGrace != 30*time.Second || w.EnableCrashHandler != "false" || w.HTTPAddr != ":8082" {
+		t.Fatalf("defaults: %+v, %v", w, err)
+	}
+	prod := maps.Clone(base)
+	prod["FF_ENV"], prod["FF_WORKER_ENABLE_CRASH_HANDLER"] = "prod", "true"
+	_, err = Load[Worker](envOpts(prod))
+	if got := validationFields(t, err); !slices.Equal(got, []string{"FF_WORKER_ENABLE_CRASH_HANDLER"}) {
+		t.Errorf("crash handler in prod: fields = %v", got)
+	}
+	dev := maps.Clone(base)
+	dev["FF_WORKER_ENABLE_CRASH_HANDLER"] = "true"
+	if w, err := Load[Worker](envOpts(dev)); err != nil || w.EnableCrashHandler != "true" {
+		t.Errorf("crash handler in dev: %q, %v", w.EnableCrashHandler, err)
+	}
+}

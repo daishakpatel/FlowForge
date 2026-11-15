@@ -164,3 +164,13 @@ Format: Context → Decision → Alternatives considered → Consequences.
   - Task 03.02 §4 fails a task whose input cannot be resolved, but `00E` §3.1 had no move from `READY` to `FAILED`.
   - The task names `FF_QUEUE_LIMITS` and an obs server for `flowforge-scheduler`, and `00E` §6 had neither.
 - **Impact:** compatible extension. One transition is added and none removed. The default resolver (identity) never fails, so the transition first matters with 03.06's templating. The two new env vars are optional with safe defaults. The `statemachine` transition-table test now includes the new row (a separate suggested commit). Tested by `TestScheduler_InputResolutionFailure`, `TestProcessRun_InputFailureAndLimits`, `TestLoad_QueueLimits` and `TestRun_CompletesDAGRuns`.
+
+### ADR-004 / ADR-007 amendment — 03.03 — 2026-11-14
+- **What:** additions recorded in `00E`.
+  - `00E` §6: `FF_WORKER_SHUTDOWN_GRACE` (`30s`) and `FF_WORKER_ENABLE_CRASH_HANDLER` (`false`, and rejected when `FF_ENV=prod`), both named by task 03.03. Also `FF_WORKER_HTTP_ADDR` (`:8082`) for the worker's `/metrics`, `/healthz` and `/readyz`.
+  - `00E` §11.1: `flowforge_worker_task_outcomes_total{outcome}` and `flowforge_worker_log_lines_dropped_total`.
+- **Why:**
+  - The task asks for "task outcome counters" and counted log drops, but `00E` named neither.
+  - A worker's metrics need a listener, and `00E` §6 had none for the worker.
+  - The crash handler kills the process on request, so it must never be enabled in production.
+- **Impact:** compatible extension. The env vars are optional with safe defaults, and the metrics are new. The worker reports two new error codes: `WORKER_SHUTDOWN` (retryable) for attempts cancelled by its own shutdown, and `INVALID_RESULT` (not retryable) for a result that isn't valid JSON. Both are handler-level codes in `task_attempts.error_code`, not `00E` §4 API codes. Tested by `TestLoad_WorkerShutdownAndCrashHandler`, `TestWorker_GracefulShutdown`, `TestWorker_FailureClassification` and `TestRun_ExecutesAndShutsDownGracefully`.
