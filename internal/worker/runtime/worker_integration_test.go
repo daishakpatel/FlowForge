@@ -234,7 +234,7 @@ func TestWorker_ServerCancellation(t *testing.T) {
 	if took := (<-cancelled).Sub(armed); took > 2*beat+150*time.Millisecond {
 		t.Errorf("handler cancelled %s after the cancel was armed; want within 2 heartbeats (%s)", took, 2*beat)
 	}
-	wantAttempt(t, srv.WaitFinished(t, id), model.AttemptFailed, handlers.CodeCancelled, no)
+	wantAttempt(t, srv.WaitFinished(t, id), model.AttemptCancelled, handlers.CodeCancelled, no) // CANCELLED since 03.05 (was FAILED)
 }
 
 // abandon ends an attempt server-side, as recovery (03.04) will for a lost worker.

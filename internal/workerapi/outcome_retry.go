@@ -34,8 +34,8 @@ const CodeWorkerLost = "WORKER_LOST"
 //
 // Abandoned attempts count toward max_attempts: attempt_count rises at every claim. A retry
 // sets available_at = clock.Now() + statemachine.NextRetryDelay, the time base that promotion
-// and claiming compare with. A task whose run has a cancel request is CANCELLED instead of
-// retried (03.05 completes run cancellation). Safe for concurrent use.
+// and claiming compare with. Any outcome but success of a task whose run has a cancel request
+// makes the task CANCELLED instead (03.05). Safe for concurrent use.
 type RetryOutcomeHandler struct {
 	Tasks persistence.TaskRepo
 	Runs  persistence.RunRepo
@@ -95,6 +95,13 @@ func (h *RetryOutcomeHandler) OnAttemptFinished(ctx context.Context, tx pgx.Tx, 
 	case AttemptCancelled:
 		return move(model.TaskCancelled, nil, nil)
 	}
+	run, err := h.Runs.Get(ctx, tx, o.Task.RunID)
+	if err != nil {
+		return err
+	}
+	if run.CancelRequested { // the run is being cancelled: no retry, no failure (03.05)
+		return move(model.TaskCancelled, nil, nil)
+	}
 	d := decide(o.Task.RetryPolicy, o.Task.AttemptCount, o.Kind, o.ErrorCode, o.Retryable)
 	if d.to != model.TaskRetryWait {
 		ev := events.NewTaskEvent(statemachine.TaskTransitionEvent(model.TaskRunning, d.to), events.TaskPayload{
@@ -102,13 +109,6 @@ func (h *RetryOutcomeHandler) OnAttemptFinished(ctx context.Context, tx pgx.Tx, 
 			AttemptCount: o.Task.AttemptCount, ErrorCode: d.code,
 		})
 		return move(d.to, nil, &ev)
-	}
-	run, err := h.Runs.Get(ctx, tx, o.Task.RunID)
-	if err != nil {
-		return err
-	}
-	if run.CancelRequested { // seam for 03.05: never retry into a run being cancelled
-		return move(model.TaskCancelled, nil, nil)
 	}
 	delay := h.delay(o.Task.RetryPolicy, o.Attempt.AttemptNumber)
 	at := h.Clock.Now().Add(delay)

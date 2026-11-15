@@ -118,11 +118,15 @@ func TestRetryOutcomeHandler(t *testing.T) {
 		t.Parallel()
 		tasks := &fakeTasks{}
 		h := NewRetryOutcomeHandler(tasks, fakeRuns{cancel: true}, clock.NewFake(now), nil)
-		if err := h.OnAttemptFinished(t.Context(), nil, outcome(AttemptTimedOut, 1)); err != nil {
-			t.Fatal(err)
+		for _, kind := range []AttemptKind{AttemptTimedOut, AttemptFailed, AttemptAbandoned} {
+			if err := h.OnAttemptFinished(t.Context(), nil, outcome(kind, 3)); err != nil { // even with no attempts left
+				t.Fatal(err)
+			}
 		}
-		if tasks.got[0].To != model.TaskCancelled {
-			t.Errorf("task moved to %s, want CANCELLED", tasks.got[0].To)
+		for i, p := range tasks.got {
+			if p.To != model.TaskCancelled {
+				t.Errorf("outcome %d of a cancel-requested run moved the task to %s, want CANCELLED", i, p.To)
+			}
 		}
 	})
 	t.Run("success and cancellation", func(t *testing.T) {

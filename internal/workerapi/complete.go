@@ -55,6 +55,9 @@ func (s *Service) FailTask(ctx context.Context, req *workerv1.FailTaskRequest) (
 		msg = truncate(msg, maxErrorMessageLen)
 	}
 	r := report{kind: AttemptFailed, code: code, message: msg, retryable: req.GetRetryable()}
+	if code == CodeCancelled { // the worker stopped because the server cancelled it (03.05)
+		r.kind, r.retryable = AttemptCancelled, false
+	}
 	if err := s.finish(ctx, req.GetAttemptId(), req.GetFencingToken(), r); err != nil {
 		return nil, err
 	}
