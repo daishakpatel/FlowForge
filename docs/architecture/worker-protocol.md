@@ -71,7 +71,7 @@ sequenceDiagram
 ## Reporting (CompleteTask, FailTask)
 
 - **The fencing check is SQL:** `UPDATE task_attempts … WHERE id = $1 AND status = 'RUNNING' AND fencing_token = $2` (`AttemptRepo.Transition`). No row means `STALE_ATTEMPT`, counted in `flowforge_stale_attempt_rejections_total`. This covers a wrong token, a second report, and an attempt the server has already ended (`TIMED_OUT`, `ABANDONED`). The Go layer never checks first and writes after. A worker that gets `STALE_ATTEMPT` must drop the result; another attempt owns the task.
-- **The outcome handler:** in the same transaction, the finished attempt goes to `OutcomeHandler.OnAttemptFinished`. The default `TerminalOutcomeHandler` makes the task `SUCCEEDED` (storing the result) or `FAILED` (`TIMED_OUT`/`CANCELLED` for those kinds). It does no retries; 03.04 replaces it.
+- **The outcome handler:** in the same transaction, the finished attempt goes to `OutcomeHandler.OnAttemptFinished`. `flowforge-api` installs `RetryOutcomeHandler` (03.04), which retries per the task's `retry_policy` ([recovery](recovery.md)). `TerminalOutcomeHandler` (no retries) remains for tests.
 - **Waking the scheduler:** the same transaction sends `NOTIFY ff_scheduler_wake` (`Service.Wake`), so the scheduler evaluates the task's dependents without waiting for its tick (03.02).
 - **Results:** at most 256 KiB of valid JSON. Larger fails the attempt as `RESULT_TOO_LARGE`, non-retryable, and answers `RESOURCE_EXHAUSTED`.
 - **Failures:** `FailTask` takes an `error_code` (1–64 characters), a message (redacted with `logging.Redact`, capped at 4 KiB) and `retryable`. Failure messages never enter events.
@@ -102,7 +102,7 @@ Defined in `internal/workerapi/seams.go`; `cmd/flowforge-api` wires the defaults
 
 | Seam | Contract | Default | Replaced by |
 |---|---|---|---|
-| `OutcomeHandler.OnAttemptFinished(ctx, tx, AttemptOutcome)` | Runs in the report's transaction with the attempt already terminal and the task still `RUNNING`; moves the task only through `TaskRepo.Transition` | `TerminalOutcomeHandler` (no retries) | 03.04 (retries) |
+| `OutcomeHandler.OnAttemptFinished(ctx, tx, AttemptOutcome)` | Runs in the report's transaction with the attempt already terminal and the task still `RUNNING`; moves the task only through `TaskRepo.Transition` | `RetryOutcomeHandler` (03.04; `TerminalOutcomeHandler` before) | — |
 | `LeaseProvider{Register, Renew, Release, Expired, Alive}` | Worker liveness; a live id held by another key is `CONFLICT` | `PGLeaseProvider`: `worker_observations.last_seen_at`, expired after `FF_WORKER_LEASE_TTL` on the API clock | 04.x (Raft leases, ADR-003) |
 | `CancelSource.CancelledAttempts(ctx, ids)` | Which live attempts to cancel | `NoCancels` | 03.05 |
 

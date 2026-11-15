@@ -174,3 +174,17 @@ Format: Context → Decision → Alternatives considered → Consequences.
   - A worker's metrics need a listener, and `00E` §6 had none for the worker.
   - The crash handler kills the process on request, so it must never be enabled in production.
 - **Impact:** compatible extension. The env vars are optional with safe defaults, and the metrics are new. The worker reports two new error codes: `WORKER_SHUTDOWN` (retryable) for attempts cancelled by its own shutdown, and `INVALID_RESULT` (not retryable) for a result that isn't valid JSON. Both are handler-level codes in `task_attempts.error_code`, not `00E` §4 API codes. Tested by `TestLoad_WorkerShutdownAndCrashHandler`, `TestWorker_GracefulShutdown`, `TestWorker_FailureClassification` and `TestRun_ExecutesAndShutsDownGracefully`.
+
+### ADR-021 / ADR-007 amendment — 03.04 — 2026-11-15
+- **What:**
+  - **Clock for a retry's `available_at`.** It is set from the injected clock, as `clock.Now() + NextRetryDelay`, through a new optional `TaskMutation.AvailableAt`. The database's `now()` is no longer used for it. Attempt deadlines are unchanged: the database sets them at claim time.
+  - **`00E` §11.1:** the metric `flowforge_loop_errors_total{loop}`, with the new allowed label `loop` (`scheduler`, `timeout`, `recovery`).
+  - **`00E` §6:** `FF_FAILPOINTS`, for test builds only. `FF_WORKER_LEASE_TTL` and `FF_WORKER_HEARTBEAT` are now also read by the scheduler.
+- **Why:**
+  - **Clock.** ADR-021 lists retry `available_at` among the uses of the database clock. Task 03.04 sets it from `clock.Now()` and requires every time compared in SQL to be a parameter from the injected clock, with tests driving a `clock.Fake`. The task file outranks `00A` (`00C` §2.12). This also matches 03.01's claim query, which already compares `available_at <= $now` on the API clock, so promotion and claiming now share one time base.
+  - **Metric and label.** The task names the metric, and `loop` was not an allowed label.
+  - **Variables.** Recovery's fallback bound is 3×heartbeat + lease TTL.
+- **Impact:**
+  - Compatible. Without `AvailableAt` the old database-clock behavior is unchanged.
+  - In production every service runs on an NTP-synced host clock, so the two time bases differ only by skew. Retry delays are in seconds, so that skew cannot reorder them.
+  - Tested by `TestRetry_BackoffOnTheFakeClock`, `TestRetryOutcomeHandler`, `TestRunTicking_BacksOffAndRecovers` and `TestLoops_SurviveDatabaseOutage`.

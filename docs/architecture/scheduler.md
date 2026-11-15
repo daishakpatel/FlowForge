@@ -11,7 +11,8 @@ Code: `internal/scheduler`, wired by `cmd/flowforge-scheduler`.
 | `Gate` | Whether this instance may decide: `IsLeader`, `Epoch`, `Done` (closed when the term ends), `Wait` (blocks until leader). |
 | `AlwaysLeader` | The single-scheduler `Gate`: always leader at epoch 0, the unfenced `cluster_state` value. It needs no Raft and stays a supported dev mode; 04.07 adds the Raft-backed `Gate`. |
 | `Loop` | A leader-only job: `Name()` and `Run(ctx, gate)`. |
-| `Runner` | Runs every registered `Loop` while the `Gate` says leader. `RegisterLoop` is the extension point for 03.04 (retries, recovery), 03.07 (outbox relay) and 03.08 (cron). |
+| `Runner` | Runs every registered `Loop` while the `Gate` says leader. `RegisterLoop` is the extension point: 03.04 registers `TimeoutLoop` and `recovery.Loop` ([recovery](recovery.md)); 03.07 (outbox relay) and 03.08 (cron) follow. |
+| `RunTicking` | The shared loop body: runs `Once` every tick (or when woken), stops on a stale epoch, and backs off failures (the tick doubled per failure, up to 30 s), counting them in `flowforge_loop_errors_total{loop}` |
 | `DecisionLoop` | The core loop described below (the task file calls it `SchedulerLoop`; renamed to avoid the `scheduler.SchedulerLoop` stutter). |
 | `InputResolver` | Computes a task's input at `READY → QUEUED`. The default `IdentityResolver` copies `config`; 03.06 replaces it with templating. |
 | `statemachine.ExprEvaluator` | Evaluates `run_if: expr`. None until 03.06 (see *Limitations*). |
@@ -47,7 +48,7 @@ flowchart TD
 0. **Assert and lock.** `AssertEpoch` runs first. Then `LockRun` reads the run with `FOR NO KEY UPDATE`, which serializes decisions on that run. `NO KEY UPDATE` still lets task rows referencing the run be inserted, which reruns need. A `PAUSED` run is left untouched, which is the seam for 03.05. Any other status that is neither `CREATED` nor `RUNNING` is skipped.
 1. **Start.** A `CREATED` run moves to `RUNNING`; `started_at` and `run.started` are set by the repository.
 2. **Readiness.** Each `PENDING` head task goes through `statemachine.EvaluateReadiness` (00E §3.4) and becomes `READY` or `SKIPPED`. Head tasks come in creation order, which is topological, so a skip propagates through a whole chain in a single pass.
-3. **Promotion.** `READY` tasks are queued oldest `available_at` first, then in creation order, as long as the budget allows (see below). Each one is queued with the resolved input. If resolution fails, the task moves `READY → FAILED` with no attempt, and its `task.failed` event carries `error_code: INVALID_INPUT`. That code is non-retryable, and this transition was added to 00E §3.1 by this task.
+3. **Promotion.** `READY` tasks, and `RETRY_WAIT` tasks whose `available_at` has come (03.04, keeping their input), are queued oldest `available_at` first, then in creation order, as long as the budget allows (see below). Each one is queued with the resolved input. If resolution fails, the task moves `READY → FAILED` with no attempt, and its `task.failed` event carries `error_code: INVALID_INPUT`. That code is non-retryable, and this transition was added to 00E §3.1 by this task.
 4. **Completion.** When every head task is terminal, the run moves `RUNNING →` `statemachine.DeriveRunStatus`. The result is `SUCCEEDED`, `FAILED` (an unhandled failure), or `NEEDS_ATTENTION` (under `on_failure: needs_attention`).
 5. **Notify.** If anything was queued, the transaction sends `NOTIFY ff_task_queued`. It is delivered at commit, and not at all on rollback.
 
@@ -91,7 +92,7 @@ The binary serves `/metrics`, `/healthz` and `/readyz` on `FF_SCHED_HTTP_ADDR` (
 ## Limitations
 
 - **`run_if: expr` stays `PENDING`.** Without an `ExprEvaluator` (03.06), such a task stays `PENDING`, and a warning is logged on every tick.
-- **`RETRY_WAIT → QUEUED`, timeouts and recovery belong to 03.04.** Pause, resume and `cancel_requested` belong to 03.05. Neither is handled here.
+- **Pause, resume and `cancel_requested` belong to 03.05.** A PAUSED run is only skipped. Retries, timeouts and recovery are described in [recovery](recovery.md).
 - **Queue limits assume one leader.** `FF_QUEUE_LIMITS` counts are read in each run's transaction. With a single leader the runs are processed one at a time, so the counts are exact.
 - **The duration uses two clocks.** `flowforge_workflow_duration_seconds` subtracts the database-clock `started_at` from the scheduler clock (ADR-021). In production both are host clocks.
 - **The definition cache is unbounded.** Definitions are immutable and cached by id, one entry per definition ever run.

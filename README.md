@@ -10,6 +10,7 @@ make lint test          # needs Go and golangci-lint
 make dev-up             # local Postgres (flowforge, aiops) and TimescaleDB (marketdata); needs Docker
 make migrate-up         # create the flowforge schema (make migrate-status shows the version)
 make test-integration   # integration tests against real databases
+make test-crash         # crash-consistency tests with failpoints compiled in (docs/architecture/recovery.md)
 make openapi-check      # OpenAPI spec, route parity and contract tests
 make proto              # lint protos, generate internal/gen (needs the pinned buf + plugins; see docs/decisions/versions.md)
 
@@ -24,7 +25,7 @@ curl -s -X POST localhost:8080/api/v1/workflows -H "Authorization: Bearer ff_…
 
 The REST API (errors, pagination, idempotent run start, examples) is described in [`docs/api/README.md`](docs/api/README.md), API keys, roles, rate limits and the audit log in [`docs/api/authentication.md`](docs/api/authentication.md); the contract is [`api/openapi/flowforge.v1.yaml`](api/openapi/flowforge.v1.yaml).
 
-Toolchain requirements, ports, profiles and troubleshooting are in [`docs/development.md`](docs/development.md); environment variables and config files in [`docs/configuration.md`](docs/configuration.md); logging, errors, IDs, clock and metrics conventions in [`docs/architecture/cross-cutting.md`](docs/architecture/cross-cutting.md); definitions, validation and state machines in [`docs/architecture/workflow-semantics.md`](docs/architecture/workflow-semantics.md); repositories, transactions and event recording in [`docs/architecture/persistence.md`](docs/architecture/persistence.md); the worker gRPC protocol in [`docs/architecture/worker-protocol.md`](docs/architecture/worker-protocol.md); the scheduler loop, leadership gate, limits and fairness in [`docs/architecture/scheduler.md`](docs/architecture/scheduler.md); the worker runtime, handler SDK and idempotency guidance in [`docs/architecture/handlers.md`](docs/architecture/handlers.md); `make help` lists every target. Licensed under MIT.
+Toolchain requirements, ports, profiles and troubleshooting are in [`docs/development.md`](docs/development.md); environment variables and config files in [`docs/configuration.md`](docs/configuration.md); logging, errors, IDs, clock and metrics conventions in [`docs/architecture/cross-cutting.md`](docs/architecture/cross-cutting.md); definitions, validation and state machines in [`docs/architecture/workflow-semantics.md`](docs/architecture/workflow-semantics.md); repositories, transactions and event recording in [`docs/architecture/persistence.md`](docs/architecture/persistence.md); the worker gRPC protocol in [`docs/architecture/worker-protocol.md`](docs/architecture/worker-protocol.md); the scheduler loop, leadership gate, limits and fairness in [`docs/architecture/scheduler.md`](docs/architecture/scheduler.md); the worker runtime, handler SDK and idempotency guidance in [`docs/architecture/handlers.md`](docs/architecture/handlers.md); retries, timeouts, worker-loss recovery and crash consistency in [`docs/architecture/recovery.md`](docs/architecture/recovery.md); `make help` lists every target. Licensed under MIT.
 
 ## Implementation blueprint
 
