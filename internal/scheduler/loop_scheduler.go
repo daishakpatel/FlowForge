@@ -40,8 +40,8 @@ type DecisionLoop struct {
 	Runs    persistence.RunRepo
 	Tasks   persistence.TaskRepo
 	Defs    persistence.DefinitionRepo
-	Inputs  InputResolver              // IdentityResolver until 03.06
-	Eval    statemachine.ExprEvaluator // nil until 03.06: run_if=expr tasks stay PENDING
+	Inputs  InputResolver              // TemplateResolver in production (03.06)
+	Eval    statemachine.ExprEvaluator // expr.Evaluator in production; nil: run_if=expr tasks stay PENDING
 	Clock   clock.Clock
 	Tick    time.Duration
 	// QueueLimits caps QUEUED+RUNNING tasks per queue across runs (FF_QUEUE_LIMITS); queues not

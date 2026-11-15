@@ -5,6 +5,7 @@ package scheduler
 import (
 	"context"
 	crand "crypto/rand"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync/atomic"
@@ -21,6 +22,7 @@ import (
 	"github.com/daishakpatel/flowforge/internal/persistence"
 	"github.com/daishakpatel/flowforge/internal/persistence/pg"
 	"github.com/daishakpatel/flowforge/internal/testutil"
+	"github.com/daishakpatel/flowforge/internal/workflow/expr"
 	"github.com/daishakpatel/flowforge/internal/workflow/model"
 )
 
@@ -55,7 +57,7 @@ func newEnv(t *testing.T) *env {
 	}
 	e.loop = &DecisionLoop{
 		DB: pool, Tx: e.tm, Cluster: pg.ClusterRepo{}, Sched: pg.SchedulerRepo{}, Notify: pg.SchedulerRepo{},
-		Runs: e.runs, Tasks: e.tasks, Defs: e.defs, Inputs: IdentityResolver{}, Clock: fc, Tick: time.Second,
+		Runs: e.runs, Tasks: e.tasks, Defs: e.defs, Inputs: TemplateResolver{}, Eval: expr.Evaluator{}, Clock: fc, Tick: time.Second,
 	}
 	return e
 }
@@ -64,6 +66,12 @@ func newEnv(t *testing.T) *env {
 // top-level fields, e.g. `"on_failure":"needs_attention",`) and starts one run of it. It returns
 // the run id and task ids by key.
 func (e *env) createRun(t *testing.T, extra, tasks string) (string, map[string]string) {
+	t.Helper()
+	return e.createRunInput(t, extra, tasks, nil)
+}
+
+// createRunInput is createRun with a run input (03.06).
+func (e *env) createRunInput(t *testing.T, extra, tasks string, input json.RawMessage) (string, map[string]string) {
 	t.Helper()
 	raw := fmt.Sprintf(`{"name":"wf-%d","version":1,%s"tasks":%s}`, e.seq.Add(1), extra, tasks)
 	def, err := model.Decode([]byte(raw))
@@ -78,7 +86,7 @@ func (e *env) createRun(t *testing.T, extra, tasks string) (string, map[string]s
 	}
 	var run persistence.RunView
 	if err := e.tm.WithTx(t.Context(), pgx.TxOptions{}, func(tx pgx.Tx) error {
-		run, err = e.runs.CreateWithTasks(t.Context(), tx, persistence.NewRun{DefinitionID: dv.ID, CreatedBy: "test"}, def)
+		run, err = e.runs.CreateWithTasks(t.Context(), tx, persistence.NewRun{DefinitionID: dv.ID, Input: input, CreatedBy: "test"}, def)
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -160,6 +168,11 @@ func (e *env) claim(ctx context.Context, taskID string) error {
 }
 
 func (e *env) finish(ctx context.Context, taskID string, ok bool) error {
+	return e.finishResult(ctx, taskID, ok, nil)
+}
+
+// finishResult is finish recording result on the task, as CompleteTask does (03.06).
+func (e *env) finishResult(ctx context.Context, taskID string, ok bool, result json.RawMessage) error {
 	attempt, task := model.AttemptSucceeded, model.TaskSucceeded
 	if !ok {
 		attempt, task = model.AttemptFailed, model.TaskFailed
@@ -175,7 +188,9 @@ func (e *env) finish(ctx context.Context, taskID string, ok bool) error {
 		}); err != nil {
 			return err
 		}
-		return e.tasks.Transition(ctx, tx, persistence.TaskTransitionParams{TaskID: taskID, From: model.TaskRunning, To: task})
+		return e.tasks.Transition(ctx, tx, persistence.TaskTransitionParams{
+			TaskID: taskID, From: model.TaskRunning, To: task, Mutate: func(m *persistence.TaskMutation) { m.Result = result },
+		})
 	})
 }
 

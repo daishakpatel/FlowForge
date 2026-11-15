@@ -17,6 +17,7 @@ import (
 	"github.com/daishakpatel/flowforge/internal/persistence"
 	"github.com/daishakpatel/flowforge/internal/testutil"
 	"github.com/daishakpatel/flowforge/internal/workerapi"
+	"github.com/daishakpatel/flowforge/internal/workflow/expr"
 	"github.com/daishakpatel/flowforge/internal/workflow/model"
 )
 
@@ -398,5 +399,34 @@ func TestTimeoutLoop_EndsOverdueRuns(t *testing.T) {
 	}
 	if s.count("run.failed "+run) != 1 {
 		t.Errorf("want one run.failed event for %s", run)
+	}
+}
+
+// TestProcessRun_ExprAndTemplatesSeeAncestors: run_if expressions and config placeholders read
+// any ancestor (here a grandparent) and the run input, with the production evaluator and resolver.
+func TestProcessRun_ExprAndTemplatesSeeAncestors(t *testing.T) {
+	t.Parallel()
+	s, l := newFakeLoop(t)
+	l.Inputs, l.Eval = TemplateResolver{}, expr.Evaluator{}
+	run := s.addRun(`{"name":"anc","version":1,"tasks":[{"id":"a","type":"t"},{"id":"b","type":"t","depends_on":["a"]},
+	  {"id":"c","type":"t","depends_on":["b"],"run_if":"expr","run_if_expr":"tasks.a.result.n > run.input.min",
+	   "config":{"v":"${tasks.a.result.n}","note":"min ${run.input.min}"}},
+	  {"id":"d","type":"t","depends_on":["b"],"run_if":"expr","run_if_expr":"tasks.a.result.n > 100"}]}`)
+	s.runs[run].Input = json.RawMessage(`{"min":1}`)
+	tickOK(t, l)
+	s.mu.Lock()
+	a := s.task(run + "_a")
+	a.Status, a.Result = model.TaskSucceeded, json.RawMessage(`{"n":5}`)
+	s.mu.Unlock()
+	tickOK(t, l)
+	s.execute() // b
+	tickOK(t, l)
+	if s.status(run, "c") != model.TaskQueued || s.status(run, "d") != model.TaskSkipped {
+		t.Fatalf("c %s (want QUEUED), d %s (want SKIPPED); events %v", s.status(run, "c"), s.status(run, "d"), s.events)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if got := string(s.task(run + "_c").Input); got != `{"note":"min 1","v":5}` {
+		t.Errorf("c input = %s", got)
 	}
 }

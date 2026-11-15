@@ -128,19 +128,24 @@ func (d *decision) start(ctx context.Context) (bool, error) {
 // evaluate decides every PENDING head task. Heads come in creation order, which is topological,
 // so a task skipped here is already terminal when its dependents are evaluated in the same pass.
 func (d *decision) evaluate(ctx context.Context) (bool, error) {
+	eval := d.l.Eval
+	if b, ok := eval.(RunBinder); ok {
+		eval = b.ForRun(d.run.Input)
+	}
 	for _, t := range d.heads {
 		if t.Status != model.TaskPending {
 			continue
 		}
-		deps := d.deps(t)
+		deps := d.ancestors(t) // run_if expressions may read any ancestor (03.06)
 		states := make([]statemachine.TaskView, len(deps))
 		for i, dep := range deps {
 			states[i] = dep.State()
 		}
-		decided, err := statemachine.EvaluateReadiness(t.State(), states, d.l.Eval)
+		decided, err := statemachine.EvaluateReadiness(t.State(), states, eval)
 		if err != nil {
-			// run_if=expr without an evaluator (until 03.06) or a dependency missing from the
-			// heads: leave the task PENDING and say why, every tick, until it is fixed.
+			// run_if=expr without an evaluator, an expression that fails to evaluate (a type
+			// error), or a dependency missing from the heads: leave the task PENDING and say why,
+			// every tick, until it is fixed.
 			logging.FromContext(ctx).WarnContext(ctx, "task readiness undecidable; left PENDING",
 				"run_id", d.run.ID, "task_id", t.ID, logging.Err(err))
 			continue
@@ -192,7 +197,7 @@ func (d *decision) queue(ctx context.Context, t *persistence.TaskView) (bool, er
 	if t.Status == model.TaskRetryWait { // its input was resolved before the first attempt
 		return d.moveTask(ctx, t, model.TaskQueued, nil, nil)
 	}
-	deps := d.deps(t)
+	deps := d.ancestors(t)
 	views := make([]persistence.TaskView, len(deps))
 	for i, dep := range deps {
 		views[i] = *dep
@@ -231,14 +236,22 @@ func (d *decision) finish(ctx context.Context) (bool, error) {
 	return true, err
 }
 
-// deps returns t's direct dependencies among the heads, skipping keys that are not there
-// (EvaluateReadiness then reports the gap).
-func (d *decision) deps(t *persistence.TaskView) []*persistence.TaskView {
-	out := make([]*persistence.TaskView, 0, len(t.DependsOn))
-	for _, key := range t.DependsOn {
-		if dep, ok := d.byKey[key]; ok {
-			out = append(out, dep)
+// ancestors returns t's ancestors among the heads, direct dependencies first, by walking
+// depends_on. Keys that are not heads are skipped (EvaluateReadiness then reports the gap).
+func (d *decision) ancestors(t *persistence.TaskView) []*persistence.TaskView {
+	var out []*persistence.TaskView
+	seen := map[string]bool{t.Key: true}
+	queue := slices.Clone(t.DependsOn)
+	for len(queue) > 0 {
+		key := queue[0]
+		queue = queue[1:]
+		dep, ok := d.byKey[key]
+		if seen[key] || !ok {
+			continue
 		}
+		seen[key] = true
+		out = append(out, dep)
+		queue = append(queue, dep.DependsOn...)
 	}
 	return out
 }

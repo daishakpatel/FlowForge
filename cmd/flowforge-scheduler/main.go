@@ -38,6 +38,7 @@ import (
 	"github.com/daishakpatel/flowforge/internal/scheduler"
 	"github.com/daishakpatel/flowforge/internal/version"
 	"github.com/daishakpatel/flowforge/internal/workerapi"
+	"github.com/daishakpatel/flowforge/internal/workflow/expr"
 )
 
 // shutdownTimeout bounds the drain of the operational HTTP server.
@@ -103,7 +104,7 @@ func run(ctx context.Context, opts config.Options, logOut io.Writer, listen func
 	runner.RegisterLoop(&scheduler.DecisionLoop{
 		DB: pool, Tx: txm, Cluster: pg.ClusterRepo{}, Sched: pg.SchedulerRepo{}, Notify: pg.SchedulerRepo{},
 		Runs: runs, Tasks: tasks, Defs: pg.NewDefinitionRepo(gen),
-		Inputs: scheduler.IdentityResolver{}, Clock: clock.Real{}, Tick: cfg.Tick,
+		Inputs: scheduler.TemplateResolver{}, Eval: expr.Evaluator{}, Clock: clock.Real{}, Tick: cfg.Tick,
 		QueueLimits: cfg.QueueLimitMap(), Wake: waker, Metrics: metrics, Errors: loopErrors,
 	})
 	runner.RegisterLoop(&scheduler.TimeoutLoop{

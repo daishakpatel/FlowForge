@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"sync"
@@ -55,7 +56,7 @@ func (s *memStore) addRun(raw string) string {
 	for i, td := range def.Tasks { // test definitions list dependencies first
 		s.tasks = append(s.tasks, &persistence.TaskView{
 			ID: fmt.Sprintf("%s_%s", runID, td.ID), RunID: runID, Key: td.ID, Type: td.Type, Queue: td.Queue,
-			Status: model.TaskPending, DependsOn: td.DependsOn, RunIf: td.RunIf, Config: []byte(`{"n":1}`),
+			Status: model.TaskPending, DependsOn: td.DependsOn, RunIf: td.RunIf, RunIfExpr: td.RunIfExpr, Config: taskConfig(td.Config),
 			AvailableAt: t0, CreatedAt: t0.Add(time.Duration(i)),
 		})
 	}
@@ -326,4 +327,12 @@ type memRecovery struct{ persistence.RecoveryRepo }
 
 func (memRecovery) OverdueAttempts(context.Context, persistence.Querier, time.Time, int) ([]persistence.AttemptView, error) {
 	return nil, nil
+}
+
+// taskConfig is the stored config of a definition task: {"n":1} when it has none.
+func taskConfig(c json.RawMessage) json.RawMessage {
+	if c == nil {
+		return json.RawMessage(`{"n":1}`)
+	}
+	return c
 }
