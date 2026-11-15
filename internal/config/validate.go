@@ -77,6 +77,8 @@ func checkRule(name, arg string, v reflect.Value, env string) string {
 		return eachString(v, validAddr, "not a host:port address")
 	case "url":
 		return eachString(v, validURL, "not an absolute URL")
+	case "queue_limits":
+		return eachString(v, func(s string) bool { _, _, ok := parseQueueLimit(s); return ok }, "not queue=n with n > 0")
 	default:
 		return "unknown validate rule " + strconv.Quote(name) // programmer error in a struct tag
 	}

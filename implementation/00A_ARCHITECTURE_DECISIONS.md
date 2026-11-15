@@ -26,7 +26,7 @@ Format: Context → Decision → Alternatives considered → Consequences.
 
 ## ADR-004 — Pull-based dispatch with Postgres `SKIP LOCKED` claims
 **Context.** v1.0 had both "dispatcher" push and worker poll.
-**Decision.** Workers long-poll `PollTask` (≤ 30 s). The API claims one `QUEUED` task matching the worker's advertised task types/queues with `SELECT … FOR UPDATE SKIP LOCKED`, inserts the attempt (assigning fencing token), sets RUNNING, all in one transaction. The scheduler only moves tasks PENDING→READY→QUEUED and handles retry/timeouts/recovery; it never talks to workers.
+**Decision.** Workers long-poll `PollTask` (≤ 30 s). The API claims one `QUEUED` task matching the worker's advertised task types/queues with `SELECT … FOR UPDATE SKIP LOCKED`, inserts the attempt (assigning fencing token), sets RUNNING, all in one transaction (amended by 03.01: a poll claims up to `free_capacity` tasks; see "ADR-004 amendment — 03.01" below). The scheduler only moves tasks PENDING→READY→QUEUED and handles retry/timeouts/recovery; it never talks to workers.
 **Alternatives.** Push dispatch (needs worker connectivity + delivery acks); Kafka-based dispatch (conflates data and control planes); Redis queue (extra source of truth).
 **Consequences.** Simple horizontal scaling and natural backpressure; slight claim latency (mitigated by `LISTEN/NOTIFY` waking pollers). The API tier, not the scheduler, hosts the Worker gRPC service.
 
@@ -155,3 +155,12 @@ Format: Context → Decision → Alternatives considered → Consequences.
   - Task 03.01 claims `LIMIT $free` and guarantees "never more than `free_capacity` tasks per poll". 03.03's runtime polls with `free_capacity = capacity - active`, which only makes sense if a poll can return several tasks.
   - Task 03.01 §4 specifies the heartbeat fields and a metrics interceptor.
 - **Impact:** compatible. The proto did not exist before this task, so no client depended on the singular shape. Fields are additive, and the metrics are new. Tested by `TestClaim_ExactlyOnceUnderRace` and `TestHeartbeat_StaleAndCancelled`.
+
+### ADR-020 / ADR-004 amendment — 03.02 — 2026-11-14
+- **What:** three additions recorded in `00E`.
+  - `00E` §3.1: the task transition `READY → FAILED`, used when input resolution fails. It is non-retryable, creates no attempt, and its `task.failed` event carries `error_code: INVALID_INPUT`.
+  - `00E` §6: `FF_SCHED_HTTP_ADDR` (default `:8081`), which serves the scheduler's `/metrics`, `/healthz` and `/readyz`. Also `FF_QUEUE_LIMITS` (default unset, meaning unlimited): `queue=n` caps on `QUEUED`+`RUNNING` tasks per queue across all runs.
+- **Why:**
+  - Task 03.02 §4 fails a task whose input cannot be resolved, but `00E` §3.1 had no move from `READY` to `FAILED`.
+  - The task names `FF_QUEUE_LIMITS` and an obs server for `flowforge-scheduler`, and `00E` §6 had neither.
+- **Impact:** compatible extension. One transition is added and none removed. The default resolver (identity) never fails, so the transition first matters with 03.06's templating. The two new env vars are optional with safe defaults. The `statemachine` transition-table test now includes the new row (a separate suggested commit). Tested by `TestScheduler_InputResolutionFailure`, `TestProcessRun_InputFailureAndLimits`, `TestLoad_QueueLimits` and `TestRun_CompletesDAGRuns`.

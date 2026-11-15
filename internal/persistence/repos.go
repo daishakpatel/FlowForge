@@ -114,6 +114,39 @@ type ClusterRepo interface {
 	AssertEpoch(ctx context.Context, tx pgx.Tx, epoch int64) error
 }
 
+// The Postgres NOTIFY channels (task 03.02). Their payload is empty: a notification only says
+// "look again".
+const (
+	// TaskQueuedChannel wakes long-polling PollTask calls; the scheduler notifies after queueing.
+	TaskQueuedChannel = "ff_task_queued"
+	// SchedulerWakeChannel wakes the scheduler loop; flowforge-api notifies after a task finishes.
+	SchedulerWakeChannel = "ff_scheduler_wake"
+)
+
+// Notifier sends a Postgres notification on channel. Sent in a transaction, it is delivered at
+// commit and dropped on rollback, so listeners never see a change that did not happen.
+type Notifier interface {
+	Notify(ctx context.Context, q Querier, channel string) error
+}
+
+// SchedulerRepo holds the scheduler's own reads (task 03.02). It changes no status: every
+// decision goes through RunRepo.Transition and TaskRepo.Transition (ADR-020).
+type SchedulerRepo interface {
+	// ActiveRunIDs returns up to limit ids of CREATED or RUNNING runs greater than afterID, in id
+	// order. Pass "" to start from the beginning.
+	ActiveRunIDs(ctx context.Context, q Querier, afterID string, limit int) ([]string, error)
+	// LockRun reads the run and row-locks it until tx ends, serializing decisions on one run.
+	LockRun(ctx context.Context, tx pgx.Tx, id string) (RunView, error)
+	// HeadTasks returns up to limit head task rows of the run, in creation order. A row is head
+	// when no other row supersedes it (rerun, ADR-008); ListByRun returns superseded rows too.
+	HeadTasks(ctx context.Context, q Querier, runID string, limit int) ([]TaskView, error)
+	// ActiveByQueue counts QUEUED and RUNNING tasks of each of queues, across all runs. A queue
+	// with no such task is absent from the map.
+	ActiveByQueue(ctx context.Context, q Querier, queues []string) (map[string]int, error)
+	// QueuedByQueue counts QUEUED tasks per queue across all runs.
+	QueuedByQueue(ctx context.Context, q Querier) (map[string]int, error)
+}
+
 // NewDefinition is the input of DefinitionRepo.Create.
 type NewDefinition struct {
 	Name       string

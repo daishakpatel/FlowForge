@@ -1,0 +1,262 @@
+package scheduler
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"slices"
+	"sync"
+	"testing"
+	"time"
+
+	promtest "github.com/prometheus/client_golang/prometheus/testutil"
+
+	"github.com/daishakpatel/flowforge/internal/clock"
+	"github.com/daishakpatel/flowforge/internal/obs"
+	"github.com/daishakpatel/flowforge/internal/persistence"
+	"github.com/daishakpatel/flowforge/internal/testutil"
+	"github.com/daishakpatel/flowforge/internal/workflow/model"
+)
+
+const diamond = `{"name":"diamond","version":1,"tasks":[{"id":"a","type":"t"},{"id":"b","type":"t","depends_on":["a"]},
+  {"id":"c","type":"t","depends_on":["a"]},{"id":"d","type":"t","depends_on":["b","c"]}]}`
+
+func newFakeLoop(t *testing.T) (*memStore, *DecisionLoop) {
+	t.Helper()
+	s := newMemStore()
+	return s, s.loop(clock.NewFake(time.Date(2026, 11, 14, 1, 0, 0, 0, time.UTC)))
+}
+
+func tickOK(t *testing.T, l *DecisionLoop) {
+	t.Helper()
+	if err := l.tick(t.Context(), AlwaysLeader{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDecisionLoop_DrivesRunsToTheirStatus(t *testing.T) {
+	t.Parallel()
+	s, l := newFakeLoop(t)
+	reg := obs.NewRegistry()
+	m, err := NewMetrics(reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.Metrics = m
+	ok := s.addRun(diamond)
+	bad := s.addRun(`{"name":"bad","version":1,"tasks":[{"id":"a","type":"t"},{"id":"b","type":"t","depends_on":["a"]}]}`)
+
+	tickOK(t, l)
+	if s.status(ok, "a") != model.TaskQueued || s.status(ok, "b") != model.TaskPending || s.runStatus(ok) != model.RunRunning {
+		t.Fatal("first tick must start the run and queue only the root")
+	}
+	if got := promtest.ToFloat64(m.QueueDepth.WithLabelValues("default")); got != 2 {
+		t.Errorf("queue depth %v, want 2", got)
+	}
+	for range 4 {
+		s.execute("a") // root a fails in both runs
+		tickOK(t, l)
+	}
+	if s.runStatus(ok) != model.RunFailed || s.status(ok, "d") != model.TaskSkipped {
+		t.Fatalf("diamond with failed root: run %s, d %s; want FAILED, SKIPPED (skip propagates)", s.runStatus(ok), s.status(ok, "d"))
+	}
+	if s.runStatus(bad) != model.RunFailed || s.status(bad, "b") != model.TaskSkipped {
+		t.Fatalf("unhandled failure: run %s, b %s; want FAILED, SKIPPED", s.runStatus(bad), s.status(bad, "b"))
+	}
+	if !slices.Contains(s.notified, persistence.TaskQueuedChannel) {
+		t.Error("no NOTIFY ff_task_queued after queueing")
+	}
+	if got := promtest.ToFloat64(m.WorkflowsStarted); got != 2 {
+		t.Errorf("workflows started %v, want 2", got)
+	}
+	if got := promtest.ToFloat64(m.WorkflowsCompleted.WithLabelValues("FAILED")); got != 2 {
+		t.Errorf("workflows completed FAILED %v", got)
+	}
+	if got := promtest.ToFloat64(m.Tasks.WithLabelValues("SKIPPED")); got != 4 { // b, c, d and bad's b
+		t.Errorf("tasks SKIPPED %v", got)
+	}
+}
+
+func TestDecisionLoop_DiamondSucceedsInOrder(t *testing.T) {
+	t.Parallel()
+	s, l := newFakeLoop(t)
+	run := s.addRun(diamond)
+	steps := []map[string]model.TaskStatus{
+		{"a": model.TaskQueued, "b": model.TaskPending},
+		{"b": model.TaskQueued, "c": model.TaskQueued, "d": model.TaskPending},
+		{"d": model.TaskQueued},
+	}
+	for i, want := range steps {
+		tickOK(t, l)
+		for k, st := range want {
+			if got := s.status(run, k); got != st {
+				t.Fatalf("step %d: %s is %s, want %s", i, k, got, st)
+			}
+		}
+		s.execute()
+	}
+	tickOK(t, l)
+	if s.runStatus(run) != model.RunSucceeded || s.count("run.succeeded") != 1 || s.count("task.queued") != 4 {
+		t.Fatalf("run %s, %d run.succeeded, %d task.queued", s.runStatus(run), s.count("run.succeeded"), s.count("task.queued"))
+	}
+}
+
+func TestDecisionLoop_StaleEpochStops(t *testing.T) {
+	t.Parallel()
+	s, l := newFakeLoop(t)
+	run := s.addRun(diamond)
+	s.epoch = 7
+	if err := l.Run(t.Context(), AlwaysLeader{}); !errors.Is(err, persistence.ErrStaleEpoch) {
+		t.Fatalf("Run = %v, want ErrStaleEpoch", err)
+	}
+	if s.runStatus(run) != model.RunCreated || len(s.events) != 0 {
+		t.Fatalf("decisions made at a stale epoch: %v", s.events)
+	}
+}
+
+// fakeWaker is a Waker the test fires by hand.
+type fakeWaker struct {
+	mu sync.Mutex
+	ch chan struct{}
+}
+
+func (w *fakeWaker) Wait() <-chan struct{} {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.ch
+}
+
+func (w *fakeWaker) fire() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	close(w.ch)
+	w.ch = make(chan struct{})
+}
+
+func TestDecisionLoop_RunTicksAndWakes(t *testing.T) {
+	t.Parallel()
+	s := newMemStore()
+	fc := clock.NewFake(time.Date(2026, 11, 14, 1, 0, 0, 0, time.UTC))
+	l := s.loop(fc)
+	w := &fakeWaker{ch: make(chan struct{})}
+	l.Wake = w
+	run := s.addRun(diamond)
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- l.Run(ctx, AlwaysLeader{}) }()
+
+	testutil.WaitFor(t, func() bool { return s.status(run, "a") == model.TaskQueued }, 5*time.Second) // first tick at once
+	s.execute()
+	w.fire() // a notification, no clock movement
+	testutil.WaitFor(t, func() bool { return s.status(run, "b") == model.TaskQueued }, 5*time.Second)
+	s.execute()
+	fc.BlockUntilWaiters(1)
+	fc.Advance(time.Second) // the tick
+	testutil.WaitFor(t, func() bool { return s.status(run, "d") == model.TaskQueued }, 5*time.Second)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("Run = %v, want nil on cancel", err)
+	}
+}
+
+// closedGate is leader by every measure except that its term has already ended.
+type closedGate struct{ AlwaysLeader }
+
+func (closedGate) Done() <-chan struct{} { c := make(chan struct{}); close(c); return c }
+
+func TestDecisionLoop_NoDecisionAfterTermEnds(t *testing.T) {
+	t.Parallel()
+	s, l := newFakeLoop(t)
+	run := s.addRun(diamond)
+	if err := l.tick(t.Context(), closedGate{}); err != nil {
+		t.Fatal(err)
+	}
+	if s.runStatus(run) != model.RunCreated {
+		t.Fatal("a decision was made after Done closed")
+	}
+}
+
+func TestProcessRun_BenignRacePausedAndUndecidable(t *testing.T) {
+	t.Parallel()
+	s, l := newFakeLoop(t)
+	run := s.addRun(diamond)
+	s.rejectTask = run + "_a" // someone else moves a first: not an error, nothing counted
+	res, err := l.runOnce(t.Context(), run, 0)
+	if err != nil || res.tasks[model.TaskReady] != 0 || res.queued != 0 || !res.started {
+		t.Fatalf("benign race: res %+v err %v", res, err)
+	}
+	tickOK(t, l)
+	if s.status(run, "a") != model.TaskQueued {
+		t.Fatal("a not queued on the next tick")
+	}
+
+	s.runs[run].Status = model.RunPaused
+	before := len(s.events)
+	if _, err := l.runOnce(t.Context(), run, 0); err != nil || len(s.events) != before {
+		t.Fatalf("paused run changed: err %v, events %v", err, s.events[before:])
+	}
+
+	expr := s.addRun(`{"name":"expr","version":1,"tasks":[{"id":"a","type":"t"},
+	  {"id":"b","type":"t","depends_on":["a"],"run_if":"expr","run_if_expr":"tasks.a.status == 'SUCCEEDED'"}]}`)
+	tickOK(t, l)
+	s.execute()
+	tickOK(t, l)
+	if s.status(expr, "b") != model.TaskPending {
+		t.Fatalf("run_if=expr without an evaluator must stay PENDING, is %s", s.status(expr, "b"))
+	}
+}
+
+type errResolver struct{}
+
+func (errResolver) Resolve(context.Context, persistence.RunView, persistence.TaskView, []persistence.TaskView) (json.RawMessage, error) {
+	return nil, errors.New("bad template")
+}
+
+func TestProcessRun_InputFailureAndLimits(t *testing.T) {
+	t.Parallel()
+	s, l := newFakeLoop(t)
+	l.Inputs = errResolver{}
+	run := s.addRun(diamond)
+	tickOK(t, l)
+	tickOK(t, l)
+	if s.status(run, "a") != model.TaskFailed || s.count("task.failed a") != 1 || s.runStatus(run) != model.RunFailed {
+		t.Fatalf("resolver failure: a %s, run %s, events %v", s.status(run, "a"), s.runStatus(run), s.events)
+	}
+
+	s2, l2 := newFakeLoop(t)
+	l2.QueueLimits = map[string]int{"default": 1}
+	wide := `{"name":"w","version":1,"concurrency":{"max_parallel_tasks":2},"tasks":[{"id":"a","type":"t"},{"id":"b","type":"t"},{"id":"c","type":"t"}]}`
+	r1, r2 := s2.addRun(wide), s2.addRun(wide)
+	tickOK(t, l2)
+	queued := 0
+	for _, r := range []string{r1, r2} {
+		for _, k := range []string{"a", "b", "c"} {
+			if s2.status(r, k) == model.TaskQueued {
+				queued++
+			}
+		}
+	}
+	if queued != 1 {
+		t.Fatalf("queue limit 1: %d queued", queued)
+	}
+	l2.QueueLimits = nil
+	tickOK(t, l2)
+	if got := s2.count("task.queued"); got != 4 { // max_parallel_tasks 2 per run
+		t.Fatalf("per-run limit 2 over two runs: %d queued", got)
+	}
+}
+
+func TestDecisionLoop_PageWrapsRoundRobin(t *testing.T) {
+	t.Parallel()
+	s, l := newFakeLoop(t)
+	l.pageSize = 3
+	for range 7 {
+		s.addRun(diamond)
+	}
+	for i, want := range []int{3, 6, 7} {
+		tickOK(t, l)
+		if got := s.count("run.started"); got != want {
+			t.Fatalf("tick %d: %d runs started, want %d", i+1, got, want)
+		}
+	}
+}

@@ -41,6 +41,7 @@ A key that no FlowForge service reads, such as a typo like `FF_PG_DNS`, is rejec
 | `addr` | `host:port`; the host may be empty (`:8080`); applies to each item of a list |
 | `url` | Absolute URL with a scheme and host |
 | `oneof` | One of the listed values |
+| `queue_limits` | Each item is `queue=n` with a non-empty queue and an integer n > 0 |
 
 Cross-field rules: `FF_LEADER_RENEW` must be less than half of `FF_LEADER_TTL`, and `FF_WORKER_HEARTBEAT` less than half of `FF_WORKER_LEASE_TTL`, so a lease survives one missed renewal. Durations use Go syntax (`500ms`, `10s`, `1m30s`).
 
@@ -63,7 +64,9 @@ Defaults are dev-only. "—" means there is no default.
 | `FF_AUTH_DISABLED` | `false` | oneof `true false`; `true` rejected when `FF_ENV=prod` | `API` |
 | `FF_API_RATE_LIMIT_RPS` | `50` | positive; per API key, burst 2×, service roles 4× | `API` |
 | `FF_RAFT_ENDPOINTS` | `raft-1:7000,raft-2:7000,raft-3:7000` | addr (each) | `API`, `Scheduler` |
+| `FF_SCHED_HTTP_ADDR` | `:8081` | addr; serves `/metrics`, `/healthz`, `/readyz` | `Scheduler` |
 | `FF_SCHED_TICK` | `500ms` | positive | `Scheduler` |
+| `FF_QUEUE_LIMITS` | — (unlimited) | queue_limits: `queue=n` items, n > 0; caps QUEUED+RUNNING tasks per queue across runs | `Scheduler` |
 | `FF_LEADER_TTL` | `10s` | positive | `Scheduler` |
 | `FF_LEADER_RENEW` | `3s` | positive, < TTL/2 | `Scheduler` |
 | `FF_KAFKA_BROKERS` | `localhost:9092` | addr (each) | `Scheduler` (outbox relay), `Worker`, `Processor` |

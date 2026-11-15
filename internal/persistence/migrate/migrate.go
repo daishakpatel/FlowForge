@@ -76,6 +76,23 @@ func Version(ctx context.Context, dsn string, set Set) (int64, error) {
 	return version, err
 }
 
+// RequireLatest fails unless the schema of set at dsn is at least Latest(set): services refuse
+// to start on an old schema and never migrate themselves (task 02.01 handoff).
+func RequireLatest(ctx context.Context, dsn string, set Set) error {
+	have, err := Version(ctx, dsn, set)
+	if err != nil {
+		return fmt.Errorf("read schema version: %w", err)
+	}
+	want, err := Latest(set)
+	if err != nil {
+		return err
+	}
+	if have < want {
+		return fmt.Errorf("database schema is at version %d but this build needs %d: run flowforge-migrate up", have, want)
+	}
+	return nil
+}
+
 // Latest returns the highest migration version embedded for set, without touching a database.
 func Latest(set Set) (int64, error) {
 	fsys, err := source(set)

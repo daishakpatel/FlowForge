@@ -94,9 +94,15 @@ func (s *Service) finish(ctx context.Context, attemptID string, token int64, r r
 		if err != nil {
 			return err
 		}
-		return s.Outcomes.OnAttemptFinished(ctx, tx, AttemptOutcome{
+		if err := s.Outcomes.OnAttemptFinished(ctx, tx, AttemptOutcome{
 			Attempt: a, Task: t, Kind: r.kind, ErrorCode: r.code, Message: r.message, Retryable: r.retryable, Result: r.result,
-		})
+		}); err != nil {
+			return err
+		}
+		if s.Wake == nil {
+			return nil
+		}
+		return s.Wake.Notify(ctx, tx, persistence.SchedulerWakeChannel) // delivered at commit
 	})
 	if apperrors.CodeOf(err) == apperrors.CodeStaleAttempt {
 		s.StaleRejections.Inc() // a normal, counted outcome (00C §10.1)

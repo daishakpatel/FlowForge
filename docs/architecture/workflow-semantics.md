@@ -64,6 +64,7 @@ stateDiagram-v2
   PENDING --> READY: dependencies terminal, run_if satisfied
   PENDING --> SKIPPED: run_if not satisfied
   READY --> QUEUED: input resolved, concurrency permits
+  READY --> FAILED: input resolution failed (INVALID_INPUT, no attempt)
   QUEUED --> RUNNING: worker claim (creates attempt)
   RUNNING --> SUCCEEDED
   RUNNING --> RETRY_WAIT: retryable failure, attempts left

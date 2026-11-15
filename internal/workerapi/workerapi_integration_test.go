@@ -606,3 +606,34 @@ func TestPGLeaseProvider_ExpiryAndAlive(t *testing.T) {
 		t.Error("renewing an unknown worker succeeded")
 	}
 }
+
+// TestCompleteTask_WakesScheduler: a finished attempt sends NOTIFY ff_scheduler_wake in its
+// transaction (03.02), so the scheduler evaluates dependents without waiting for its tick.
+func TestCompleteTask_WakesScheduler(t *testing.T) {
+	e := newEnv(t, func(s *Service) { s.Wake = pg.SchedulerRepo{} })
+	listener, err := pgx.Connect(t.Context(), e.pool.Config().ConnString())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = listener.Close(context.WithoutCancel(t.Context())) })
+	if _, err := listener.Exec(t.Context(), "LISTEN "+persistence.SchedulerWakeChannel); err != nil {
+		t.Fatal(err)
+	}
+	e.queue(t, 1, "a", "q")
+	e.register(t, "waker-test", []string{"a"}, []string{"q"}, 1)
+	tasks := e.poll(t, "waker-test", 1, 1)
+	if len(tasks) != 1 {
+		t.Fatalf("claimed %d, want 1", len(tasks))
+	}
+	if _, err := e.client.CompleteTask(as(t.Context(), e.worker), &workerv1.CompleteTaskRequest{
+		AttemptId: tasks[0].GetAttemptId(), FencingToken: tasks[0].GetFencingToken(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	wctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	n, err := listener.WaitForNotification(wctx)
+	if err != nil || n.Channel != persistence.SchedulerWakeChannel {
+		t.Fatalf("no %s notification after CompleteTask: %v", persistence.SchedulerWakeChannel, err)
+	}
+}

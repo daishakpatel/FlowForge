@@ -199,6 +199,7 @@ Indexing/retention: `workflow_events`, `task_logs`, `outbox` (published) are pru
 | PENDING | SKIPPED | `run_if` not satisfied (scheduler) |
 | PENDING | CANCELLED | run cancelled |
 | READY | QUEUED | input resolved, concurrency permits (scheduler) |
+| READY | FAILED | input resolution failed: non-retryable `INVALID_INPUT`, no attempt; `task.failed` carries `error_code` (scheduler, 03.02) |
 | READY / QUEUED | CANCELLED | run cancelled |
 | QUEUED | RUNNING | worker claim (API/PollTask) — creates attempt |
 | RUNNING | SUCCEEDED | `CompleteTask` with valid fencing token |
@@ -297,6 +298,8 @@ Election tick 10 × 100 ms = 1 s heartbeat tick 1 (100 ms); `PreVote` and `Check
 | `FF_RAFT_ENDPOINTS` | `raft-1:7000,raft-2:7000,raft-3:7000` | api, scheduler |
 | `FF_RAFT_NODE_ID`, `FF_RAFT_PEERS`, `FF_RAFT_DATA_DIR`, `FF_RAFT_CLIENT_ADDR`, `FF_RAFT_PEER_ADDR` | — | raft |
 | `FF_SCHED_TICK` | `500ms` | scheduler |
+| `FF_SCHED_HTTP_ADDR` | `:8081` (`/metrics`, `/healthz`, `/readyz`) | scheduler |
+| `FF_QUEUE_LIMITS` | unset = unlimited (`queue=n,queue2=m`: max QUEUED+RUNNING tasks per queue across runs) | scheduler |
 | `FF_LEADER_TTL` / `FF_LEADER_RENEW` | `10s` / `3s` | scheduler |
 | `FF_WORKER_LEASE_TTL` / `FF_WORKER_HEARTBEAT` | `15s` / `5s` | api, worker |
 | `FF_WORKER_ID`, `FF_WORKER_QUEUES`, `FF_WORKER_CAPACITY`, `FF_API_GRPC_TARGET`, `FF_WORKER_TOKEN` | — | worker |

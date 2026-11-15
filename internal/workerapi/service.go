@@ -39,7 +39,10 @@ type Service struct {
 	Outcomes OutcomeHandler
 	Cancels  CancelSource
 	Waker    *Waker // nil: no LISTEN, PollTask re-checks every second only
-	Clock    clock.Clock
+	// Wake sends NOTIFY ff_scheduler_wake when an attempt finishes, so the scheduler reacts
+	// without waiting for its tick (03.02). Nil: the scheduler sees the result on its next tick.
+	Wake  persistence.Notifier
+	Clock clock.Clock
 
 	LeaseTTL          time.Duration // FF_WORKER_LEASE_TTL
 	HeartbeatInterval time.Duration // FF_WORKER_HEARTBEAT

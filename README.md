@@ -15,13 +15,14 @@ make proto              # lint protos, generate internal/gen (needs the pinned b
 
 # Run the API: the first start in dev prints an admin API key once (docs/api/authentication.md)
 go run ./cmd/flowforge-api &
+go run ./cmd/flowforge-scheduler &   # queues tasks and finishes runs; /metrics on :8081
 curl -s -X POST localhost:8080/api/v1/workflows -H "Authorization: Bearer ff_…" -H 'Content-Type: application/json' \
   --data @internal/workflow/model/testdata/market-data-hourly.json
 ```
 
 The REST API (errors, pagination, idempotent run start, examples) is described in [`docs/api/README.md`](docs/api/README.md), API keys, roles, rate limits and the audit log in [`docs/api/authentication.md`](docs/api/authentication.md); the contract is [`api/openapi/flowforge.v1.yaml`](api/openapi/flowforge.v1.yaml).
 
-Toolchain requirements, ports, profiles and troubleshooting are in [`docs/development.md`](docs/development.md); environment variables and config files in [`docs/configuration.md`](docs/configuration.md); logging, errors, IDs, clock and metrics conventions in [`docs/architecture/cross-cutting.md`](docs/architecture/cross-cutting.md); definitions, validation and state machines in [`docs/architecture/workflow-semantics.md`](docs/architecture/workflow-semantics.md); repositories, transactions and event recording in [`docs/architecture/persistence.md`](docs/architecture/persistence.md); the worker gRPC protocol in [`docs/architecture/worker-protocol.md`](docs/architecture/worker-protocol.md); `make help` lists every target. Licensed under MIT.
+Toolchain requirements, ports, profiles and troubleshooting are in [`docs/development.md`](docs/development.md); environment variables and config files in [`docs/configuration.md`](docs/configuration.md); logging, errors, IDs, clock and metrics conventions in [`docs/architecture/cross-cutting.md`](docs/architecture/cross-cutting.md); definitions, validation and state machines in [`docs/architecture/workflow-semantics.md`](docs/architecture/workflow-semantics.md); repositories, transactions and event recording in [`docs/architecture/persistence.md`](docs/architecture/persistence.md); the worker gRPC protocol in [`docs/architecture/worker-protocol.md`](docs/architecture/worker-protocol.md); the scheduler loop, leadership gate, limits and fairness in [`docs/architecture/scheduler.md`](docs/architecture/scheduler.md); `make help` lists every target. Licensed under MIT.
 
 ## Implementation blueprint
 

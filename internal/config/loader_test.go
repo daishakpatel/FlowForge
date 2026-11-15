@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -327,6 +328,27 @@ func TestValidators(t *testing.T) {
 	} {
 		if got := tt.fn(tt.in); got != tt.want {
 			t.Errorf("validator(%q) = %v, want %v", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestLoad_QueueLimits(t *testing.T) {
+	t.Parallel()
+	cfg, err := Load[Scheduler](envOpts(map[string]string{"FF_QUEUE_LIMITS": "default=50, reports=5,reports=7"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := cfg.QueueLimitMap(), map[string]int{"default": 50, "reports": 7}; !maps.Equal(got, want) {
+		t.Errorf("QueueLimitMap = %v, want %v (last value wins)", got, want)
+	}
+	unset, err := Load[Scheduler](envOpts(nil))
+	if err != nil || len(unset.QueueLimitMap()) != 0 || unset.HTTPAddr != ":8081" {
+		t.Errorf("defaults: limits %v, addr %q, err %v", unset.QueueLimitMap(), unset.HTTPAddr, err)
+	}
+	for _, bad := range []string{"default", "default=0", "default=-1", "=5", "default=x"} {
+		_, err := Load[Scheduler](envOpts(map[string]string{"FF_QUEUE_LIMITS": bad}))
+		if got := validationFields(t, err); !slices.Equal(got, []string{"FF_QUEUE_LIMITS"}) {
+			t.Errorf("FF_QUEUE_LIMITS=%q: fields = %v, want [FF_QUEUE_LIMITS]", bad, got)
 		}
 	}
 }

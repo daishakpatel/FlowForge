@@ -66,12 +66,13 @@ sequenceDiagram
 - **When nothing is claimable,** the call waits up to `wait_ms` (default 10 000, at most 30 000) and returns an empty list.
 - **Waking up:** it holds no database connection while waiting. One dedicated connection per API process runs `LISTEN ff_task_queued` (`workerapi.Waker`) and wakes all waiting polls; each poll also re-checks every second, so a missed notification costs at most a second.
 - **Cancellation:** a cancelled call returns at once.
-- **Who notifies:** whatever queues tasks (the scheduler, 03.02) must run `NOTIFY ff_task_queued` after committing.
+- **Who notifies:** the scheduler sends `NOTIFY ff_task_queued` inside the transaction that queues tasks, so it is delivered at commit and never for a rolled-back decision ([scheduler](scheduler.md)).
 
 ## Reporting (CompleteTask, FailTask)
 
 - **The fencing check is SQL:** `UPDATE task_attempts … WHERE id = $1 AND status = 'RUNNING' AND fencing_token = $2` (`AttemptRepo.Transition`). No row means `STALE_ATTEMPT`, counted in `flowforge_stale_attempt_rejections_total`. This covers a wrong token, a second report, and an attempt the server has already ended (`TIMED_OUT`, `ABANDONED`). The Go layer never checks first and writes after. A worker that gets `STALE_ATTEMPT` must drop the result; another attempt owns the task.
 - **The outcome handler:** in the same transaction, the finished attempt goes to `OutcomeHandler.OnAttemptFinished`. The default `TerminalOutcomeHandler` makes the task `SUCCEEDED` (storing the result) or `FAILED` (`TIMED_OUT`/`CANCELLED` for those kinds). It does no retries; 03.04 replaces it.
+- **Waking the scheduler:** the same transaction sends `NOTIFY ff_scheduler_wake` (`Service.Wake`), so the scheduler evaluates the task's dependents without waiting for its tick (03.02).
 - **Results:** at most 256 KiB of valid JSON. Larger fails the attempt as `RESULT_TOO_LARGE`, non-retryable, and answers `RESOURCE_EXHAUSTED`.
 - **Failures:** `FailTask` takes an `error_code` (1–64 characters), a message (redacted with `logging.Redact`, capped at 4 KiB) and `retryable`. Failure messages never enter events.
 

@@ -20,7 +20,7 @@ var ErrInvalidTransition = errors.New("invalid state transition")
 // taskTransitions is 00E §3.1 as data: from → allowed targets. Read-only.
 var taskTransitions = map[model.TaskStatus][]model.TaskStatus{
 	model.TaskPending:   {model.TaskReady, model.TaskSkipped, model.TaskCancelled},
-	model.TaskReady:     {model.TaskQueued, model.TaskCancelled},
+	model.TaskReady:     {model.TaskQueued, model.TaskFailed, model.TaskCancelled},
 	model.TaskQueued:    {model.TaskRunning, model.TaskCancelled},
 	model.TaskRunning:   {model.TaskSucceeded, model.TaskRetryWait, model.TaskFailed, model.TaskTimedOut, model.TaskCancelled},
 	model.TaskRetryWait: {model.TaskQueued, model.TaskCancelled},

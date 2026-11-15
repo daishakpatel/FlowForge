@@ -190,18 +190,7 @@ func serve(ctx context.Context, srv *http.Server, ln net.Listener, drain time.Du
 // checkSchema fails unless the flowforge schema is at least the newest embedded migration;
 // services never migrate themselves (task 02.01 handoff).
 func checkSchema(ctx context.Context, dsn config.Secret) error {
-	have, err := migrate.Version(ctx, dsn.Reveal(), migrate.Flowforge)
-	if err != nil {
-		return fmt.Errorf("read schema version: %w", err)
-	}
-	want, err := migrate.Latest(migrate.Flowforge)
-	if err != nil {
-		return err
-	}
-	if have < want {
-		return fmt.Errorf("database schema is at version %d but this build needs %d: run flowforge-migrate up", have, want)
-	}
-	return nil
+	return migrate.RequireLatest(ctx, dsn.Reveal(), migrate.Flowforge)
 }
 
 // newWorkerServer builds the worker gRPC server (task 03.01): interceptors, the 4 MiB message cap,
@@ -226,7 +215,7 @@ func newWorkerServer(reg *obs.Registry, authn auth.Authenticator, gen ids.Genera
 		DB: pool, Tx: txm, Tasks: tasks, Attempts: pg.NewAttemptRepo(gen, rec), Workers: pg.WorkerRepo{},
 		Logs: pg.TaskLogRepo{}, Outcomes: workerapi.TerminalOutcomeHandler{Tasks: tasks}, Cancels: workerapi.NoCancels{},
 		Leases: &workerapi.PGLeaseProvider{DB: pool, Workers: pg.WorkerRepo{}, Clock: clock.Real{}, TTL: cfg.WorkerLeaseTTL},
-		Waker:  waker, Clock: clock.Real{}, LeaseTTL: cfg.WorkerLeaseTTL, HeartbeatInterval: cfg.WorkerHeartbeat,
+		Waker:  waker, Wake: pg.SchedulerRepo{}, Clock: clock.Real{}, LeaseTTL: cfg.WorkerLeaseTTL, HeartbeatInterval: cfg.WorkerHeartbeat,
 		StaleRejections: stale.WithLabelValues(),
 	}
 	srv := grpc.NewServer(

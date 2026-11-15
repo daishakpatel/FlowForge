@@ -6,7 +6,7 @@ How control-plane services read and change workflow state in the `flowforge` dat
 
 | Package | Holds |
 |---|---|
-| `internal/persistence` | The contract: `TxManager`, the repository interfaces (`DefinitionRepo`, `RunRepo`, `TaskRepo`, `AttemptRepo`, `EventRepo`, `ClusterRepo`), their parameter types, the read models (`RunView`, `TaskView`, …) and keyset cursors. |
+| `internal/persistence` | The contract: `TxManager`, the repository interfaces (`DefinitionRepo`, `RunRepo`, `TaskRepo`, `AttemptRepo`, `EventRepo`, `ClusterRepo`; later tasks add `APIKeyRepo`, `AuditRepo`, `WorkerRepo`, `TaskLogRepo`, and 03.02's read-only `SchedulerRepo` with the `Notifier` for `NOTIFY ff_task_queued` / `ff_scheduler_wake`), their parameter types, the read models (`RunView`, `TaskView`, …) and keyset cursors. |
 | `internal/persistence/pg` | The Postgres implementation: `NewPool`, `TxManager`, and one repository type per interface. |
 | `internal/persistence/queries` | All SQL, compiled by sqlc into `internal/persistence/sqlcgen` (`make sqlc`). No SQL is built from strings. |
 | `internal/events` | Typed event constructors for every `00E` §7 type, the envelope, and `Recorder.Record`. |
