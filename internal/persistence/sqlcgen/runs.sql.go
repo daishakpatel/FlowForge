@@ -200,7 +200,8 @@ UPDATE workflow_runs SET
   status       = $1::text,
   version      = version + 1,
   started_at   = CASE WHEN $1::text = 'RUNNING' THEN COALESCE(started_at, now()) ELSE started_at END,
-  completed_at = CASE WHEN $2::bool THEN now() ELSE completed_at END,
+  completed_at = CASE WHEN $2::bool THEN now()
+                      WHEN $1::text = 'RUNNING' THEN NULL ELSE completed_at END,
   leader_epoch = COALESCE($3::bigint, leader_epoch),
   deadline_at  = COALESCE($4::timestamptz, deadline_at)
 WHERE id = $5 AND status = $6::text AND version = $7
@@ -218,8 +219,9 @@ type TransitionRunParams struct {
 }
 
 // Conditional transition (ADR-020): no row when the run is missing, not in from_status, or at
-// another version. started_at is set on the first move to RUNNING; completed_at when terminal;
-// deadline_at when given (the workflow deadline, set at start from the scheduler clock, 03.05).
+// another version. started_at is set on the first move to RUNNING; completed_at when terminal, and
+// cleared on a move back to RUNNING (a rerun of a FAILED run, 03.06); deadline_at when given (the
+// workflow deadline, set at start from the scheduler clock, 03.05, and again by a rerun).
 func (q *Queries) TransitionRun(ctx context.Context, arg TransitionRunParams) (WorkflowRun, error) {
 	row := q.db.QueryRow(ctx, transitionRun,
 		arg.ToStatus,

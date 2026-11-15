@@ -32,7 +32,13 @@ type RunPayload struct {
 	Status         model.RunStatus `json:"status"`
 	PreviousStatus model.RunStatus `json:"previous_status,omitempty"`
 	TaskCount      int             `json:"task_count,omitempty"` // run.created only
-	Reason         string          `json:"reason,omitempty"`     // run.failed: WORKFLOW_TIMEOUT when the workflow deadline passed (03.05)
+	Reason         string          `json:"reason,omitempty"`     // run.failed: WORKFLOW_TIMEOUT when the workflow deadline passed (03.05); run.resumed: the rerun reason (03.06)
+	// Actor is who asked for a rerun (run.resumed, 03.06): an API key id or the approval executor.
+	Actor string `json:"actor,omitempty"`
+	// SupersededTaskIDs lists the task rows a rerun superseded (run.resumed, 03.06).
+	SupersededTaskIDs []string `json:"superseded_task_ids,omitempty"`
+	// RerunTaskIDs lists the rows the rerun created, in the same order (run.resumed, 03.06).
+	RerunTaskIDs []string `json:"rerun_task_ids,omitempty"`
 }
 
 // TaskPayload is the payload of task.* events other than task.attempt.*.

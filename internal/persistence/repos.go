@@ -177,6 +177,17 @@ type RunControlRepo interface {
 	OverdueRuns(ctx context.Context, q Querier, now time.Time, limit int) ([]string, error)
 }
 
+// RerunRepo creates remediation rerun rows (ADR-008, task 03.06). The caller decides which
+// rows to supersede and moves the run back to RUNNING in the same transaction.
+type RerunRepo interface {
+	// InsertReruns inserts, for each id in supersede (task rows of runID, dependencies first), a
+	// PENDING row that supersedes it, copying its definition fields with attempt_count 0, and
+	// returns the new ids in the same order; task ids are increasing, so the new rows keep that
+	// order among the heads. The originals are not changed. A row that is already superseded is
+	// CONFLICT, a row not in the run NOT_FOUND.
+	InsertReruns(ctx context.Context, tx pgx.Tx, runID string, supersede []string) ([]string, error)
+}
+
 // NewDefinition is the input of DefinitionRepo.Create.
 type NewDefinition struct {
 	Name       string

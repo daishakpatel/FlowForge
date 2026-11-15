@@ -28,6 +28,7 @@ var (
 		"RUNNING>SUCCEEDED", "RUNNING>FAILED", "RUNNING>CANCELLED", "RUNNING>NEEDS_ATTENTION",
 		"RUNNING>PAUSED", "PAUSED>RUNNING", "PAUSED>CANCELLED", "PAUSED>FAILED",
 		"NEEDS_ATTENTION>RUNNING", "NEEDS_ATTENTION>FAILED", "NEEDS_ATTENTION>CANCELLED",
+		"FAILED>RUNNING", // rerun, since 03.06
 	}
 )
 
@@ -153,6 +154,7 @@ func TestTransitionEvents(t *testing.T) {
 		{model.RunNeedsAttention, model.RunCancelled, EventRunCancelled},
 		{model.RunRunning, model.RunNeedsAttention, EventRunNeedsAttention},
 		{model.RunCreated, model.RunCancelled, EventRunCancelled}, // allowed since 03.05
+		{model.RunFailed, model.RunRunning, EventRunResumed},      // rerun, since 03.06
 		{model.RunSucceeded, model.RunRunning, ""},                // disallowed: no event
 	} {
 		if got := RunTransitionEvent(tc.from, tc.to); got != tc.want {

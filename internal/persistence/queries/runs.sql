@@ -37,13 +37,15 @@ LIMIT @lim;
 
 -- name: TransitionRun :one
 -- Conditional transition (ADR-020): no row when the run is missing, not in from_status, or at
--- another version. started_at is set on the first move to RUNNING; completed_at when terminal;
--- deadline_at when given (the workflow deadline, set at start from the scheduler clock, 03.05).
+-- another version. started_at is set on the first move to RUNNING; completed_at when terminal, and
+-- cleared on a move back to RUNNING (a rerun of a FAILED run, 03.06); deadline_at when given (the
+-- workflow deadline, set at start from the scheduler clock, 03.05, and again by a rerun).
 UPDATE workflow_runs SET
   status       = @to_status::text,
   version      = version + 1,
   started_at   = CASE WHEN @to_status::text = 'RUNNING' THEN COALESCE(started_at, now()) ELSE started_at END,
-  completed_at = CASE WHEN @terminal::bool THEN now() ELSE completed_at END,
+  completed_at = CASE WHEN @terminal::bool THEN now()
+                      WHEN @to_status::text = 'RUNNING' THEN NULL ELSE completed_at END,
   leader_epoch = COALESCE(sqlc.narg(leader_epoch)::bigint, leader_epoch),
   deadline_at  = COALESCE(sqlc.narg(deadline_at)::timestamptz, deadline_at)
 WHERE id = @id AND status = @from_status::text AND version = @version
