@@ -217,10 +217,10 @@ Indexing/retention: `workflow_events`, `task_logs`, `outbox` (published) are pru
 `RUNNING → SUCCEEDED | FAILED | TIMED_OUT | ABANDONED | CANCELLED`. Terminal; completion succeeds only when `status='RUNNING' AND fencing_token = $token`.
 
 ### 3.3 Run states
-CREATED → RUNNING (first task queued) → SUCCEEDED (all tasks SUCCEEDED or SKIPPED, no non-handled failure) | FAILED (a task failed with no `on_failure` branch handling it, or workflow timeout) | CANCELLED | NEEDS_ATTENTION (an `AI_INVESTIGATION`/approval is pending or workflow policy `on_failure: needs_attention`). RUNNING ⇄ PAUSED. NEEDS_ATTENTION → RUNNING (rerun/approval executed) | FAILED | CANCELLED. CREATED → CANCELLED and PAUSED → CANCELLED (cancel, 03.05); PAUSED → FAILED (workflow timeout while paused, 03.05).
+CREATED → RUNNING (first task queued) → SUCCEEDED (all tasks SUCCEEDED or SKIPPED, no non-handled failure) | FAILED (a task failed with no `on_failure` branch handling it, or workflow timeout) | CANCELLED | NEEDS_ATTENTION (an `AI_INVESTIGATION`/approval is pending or workflow policy `on_failure: needs_attention`). RUNNING ⇄ PAUSED. NEEDS_ATTENTION → RUNNING (rerun/approval executed) | FAILED | CANCELLED. CREATED → CANCELLED and PAUSED → CANCELLED (cancel, 03.05); PAUSED → FAILED (workflow timeout while paused, 03.05). FAILED → RUNNING (remediation rerun, ADR-008, 03.06): clears `completed_at`, event `run.resumed`.
 
 ### 3.4 `run_if` semantics
-`on_success` (all deps SUCCEEDED), `on_failure` (≥1 dep FAILED/TIMED_OUT, all deps terminal), `always` (all deps terminal), `expr` (all deps terminal and boolean expression over `tasks.<key>.status|result` evaluates true; expression grammar in task 03.06). A failed task whose failure is "handled" by at least one `on_failure`/`always` dependent does not by itself fail the run; the run result is FAILED iff some terminal-failed task has no handling dependent that SUCCEEDED.
+`on_success` (all deps SUCCEEDED), `on_failure` (≥1 dep FAILED/TIMED_OUT, all deps terminal), `always` (all deps terminal), `expr` (all deps terminal and boolean expression over `tasks.<key>.status|result` evaluates true; expression grammar in task 03.06, `docs/architecture/templating-and-rerun.md`; it may also read `run.input`, and `tasks.<key>` must be an ancestor, validated as issue `INVALID_REFERENCE`). A failed task whose failure is "handled" by at least one `on_failure`/`always` dependent does not by itself fail the run; the run result is FAILED iff some terminal-failed task has no handling dependent that SUCCEEDED.
 
 ### 3.5 Workflow definition JSON (v1)
 
@@ -367,7 +367,7 @@ Auth: `authorization: Bearer <worker token>` metadata (role `worker`). Stale tok
 | POST | `/api/v1/workflows/{id}/runs` (header `Idempotency-Key`) | operator |
 | GET | `/api/v1/runs` (filters: status, workflow, since, until, cursor) ; `/api/v1/runs/{run_id}` | viewer |
 | POST | `/api/v1/runs/{run_id}/cancel` `…/pause` `…/resume` `…/retry` `…/rerun` | operator |
-| GET | `/api/v1/runs/{run_id}/tasks` ; `/api/v1/runs/{run_id}/events` | viewer |
+| GET | `/api/v1/runs/{run_id}/tasks` (`?include_superseded=true`: every rerun generation; default head instances only, 03.06) ; `/api/v1/runs/{run_id}/events` | viewer |
 | GET | `/api/v1/tasks/{task_id}` ; `/attempts` ; `/api/v1/attempts/{attempt_id}/logs` | viewer |
 | GET | `/api/v1/workers` ; `/api/v1/cluster/status` | viewer |
 | CRUD | `/api/v1/triggers` | admin (read: viewer) |

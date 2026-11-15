@@ -44,13 +44,14 @@ A `run_if: "expr"` task carries its expression in `run_if_expr` (the `workflow_t
 | `INVALID_TIMEOUT` | Task `timeout_seconds` outside 1–86 400 |
 | `MISSING_TYPE` | `type` blank or longer than 128 characters |
 | `INVALID_QUEUE` | Queue doesn't match the task-ID pattern |
-| `INVALID_RUN_IF` | Unknown `run_if`; `on_failure` on a task with no dependencies; `run_if_expr` set without `run_if: "expr"`; an expression the syntax hook rejects; an expression referring to a task that isn't an ancestor |
+| `INVALID_RUN_IF` | Unknown `run_if`; `on_failure` on a task with no dependencies; `run_if_expr` set without `run_if: "expr"`; an expression that doesn't parse |
+| `INVALID_REFERENCE` | A `${…}` placeholder in `config` that doesn't parse, or a placeholder or `run_if_expr` path naming a task that is unknown or not an ancestor (03.06; such expression references were `INVALID_RUN_IF` before) |
 | `EMPTY_EXPRESSION` | `run_if: "expr"` with a blank `run_if_expr` |
 | `INVALID_WORKFLOW_FIELD` | Name not matching `^[a-z][a-z0-9_-]{0,127}$`; `version` < 1; workflow `timeout_seconds` outside 0–604 800; unknown `on_failure`; `max_parallel_tasks` outside 0–500; no tasks |
 
 Cycles are found with Kahn's algorithm; a cycle path is then extracted from the leftover nodes and rotated to start at its smallest ID. Validation runs in O(V+E); a 500-task DAG validates in under 0.4 ms on an Apple M1 (`go test -bench BenchmarkValidate500 ./internal/dag/`).
 
-Expression syntax belongs to task 03.06. Until then `dag.Validator{}` only checks that an expression is non-empty and that every `tasks.<id>` it mentions is an ancestor. 03.06 sets `Validator.ValidateExpr` (and `Validator.Refs` if its grammar needs it).
+The API validates with `dag.Validator{ValidateExpr: expr.Validate, Refs: expr.Refs}`, so expressions are parsed with the [expression grammar](templating-and-rerun.md#run_if-expressions). The zero `dag.Validator{}` only checks that an expression is non-empty and finds its `tasks.<id>` references by pattern. Config placeholders are always checked.
 
 ## State machines
 
@@ -112,22 +113,23 @@ stateDiagram-v2
   NEEDS_ATTENTION --> RUNNING: rerun or approval executed
   NEEDS_ATTENTION --> FAILED
   NEEDS_ATTENTION --> CANCELLED
+  FAILED --> RUNNING: rerun (03.06)
 ```
 
-A `CREATED` or `PAUSED` run can be cancelled, and a `PAUSED` run fails when its workflow deadline passes: pausing does not stop the deadline (03.05, [run control](run-control.md)).
+A `CREATED` or `PAUSED` run can be cancelled, and a `PAUSED` run fails when its workflow deadline passes: pausing does not stop the deadline (03.05, [run control](run-control.md)). A `FAILED` run goes back to `RUNNING` only through an operator's rerun ([templating and rerun](templating-and-rerun.md)).
 
 Each allowed transition has an event type (`00E` §7): `TaskTransitionEvent`, `AttemptTransitionEvent` and `RunTransitionEvent` return it. Creation events (`run.created`, `task.attempt.started`) aren't transitions and are emitted by the code that creates the row. `RUNNING → CANCELLED` on an attempt has no event of its own; the task's `task.cancelled` covers it.
 
 ## Readiness (`run_if`)
 
-`statemachine.EvaluateReadiness(task, deps, eval)` decides what happens to a `PENDING` task, given its direct dependencies:
+`statemachine.EvaluateReadiness(task, deps, eval)` decides what happens to a `PENDING` task, given at least its direct dependencies. The scheduler passes all of the task's ancestors, because an expression may read any of them:
 
 | `run_if` | Ready when (all dependencies terminal) | Otherwise |
 |---|---|---|
 | `on_success` | every dependency `SUCCEEDED` | Skip |
 | `on_failure` | at least one dependency `FAILED` or `TIMED_OUT` | Skip |
 | `always` | always | — |
-| `expr` | the injected `ExprEvaluator` returns true | Skip on false; error on evaluator error or a nil evaluator |
+| `expr` | the injected `ExprEvaluator` (`expr.Evaluator`) returns true | Skip on false; error on an evaluation error (a type error) or a nil evaluator, and the task stays `PENDING` |
 
 If any dependency is not terminal yet, or the task isn't `PENDING`, the decision is Wait. Because `on_success` needs every dependency to have succeeded, a skip propagates down a chain. A task without dependencies is Ready under `on_success` and `always`, and validation forbids `on_failure` without dependencies.
 
@@ -155,5 +157,4 @@ The delay is never below 0 nor above `max_delay · (1 + jitter)`. With `jitter =
 
 ## Limitations
 
-- Expression syntax and evaluation arrive in task 03.06; until then `run_if: "expr"` tasks validate only for non-empty text and ancestor references, and readiness returns an error without an evaluator.
 - `DeriveRunStatus` treats a `CANCELLED` task as an unhandled failure; a deliberate run cancellation is decided from the run's flags before it is called.

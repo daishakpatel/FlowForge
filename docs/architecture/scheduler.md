@@ -14,8 +14,8 @@ Code: `internal/scheduler`, wired by `cmd/flowforge-scheduler`.
 | `Runner` | Runs every registered `Loop` while the `Gate` says leader. `RegisterLoop` is the extension point: 03.04 registers `TimeoutLoop` and `recovery.Loop` ([recovery](recovery.md)); 03.07 (outbox relay) and 03.08 (cron) follow. |
 | `RunTicking` | The shared loop body: runs `Once` every tick (or when woken), stops on a stale epoch, and backs off failures (the tick doubled per failure, up to 30 s), counting them in `flowforge_loop_errors_total{loop}` |
 | `DecisionLoop` | The core loop described below (the task file calls it `SchedulerLoop`; renamed to avoid the `scheduler.SchedulerLoop` stutter). |
-| `InputResolver` | Computes a task's input at `READY → QUEUED`. The default `IdentityResolver` copies `config`; 03.06 replaces it with templating. |
-| `statemachine.ExprEvaluator` | Evaluates `run_if: expr`. None until 03.06 (see *Limitations*). |
+| `InputResolver` | Computes a task's input at `READY → QUEUED` from its `config`, the run input and its ancestors. Production uses `TemplateResolver` ([templating](templating-and-rerun.md)); `IdentityResolver` copies `config` verbatim. |
+| `statemachine.ExprEvaluator` | Evaluates `run_if: expr`. Production uses `expr.Evaluator`, bound to each run's input through `RunBinder`. |
 
 ## Gate contract
 
@@ -62,7 +62,7 @@ Two concurrent `processRun` calls on the same run serialize on the run lock, so 
 
 ### Head instances
 
-A task row is a **head** when no other row has `supersedes_task_id = task.id` (`ListHeadTasks`, a `NOT EXISTS` within the run). Only heads take part in readiness, limits and run status. A remediation rerun (03.06) adds a new row that supersedes a failed one: the old row stops counting, and dependents wait for the new row. `TestScheduler_HeadInstance` inserts such a row by hand.
+A task row is a **head** when no other row has `supersedes_task_id = task.id` (`ListHeadTasks`, a `NOT EXISTS` within the run). Only heads take part in readiness, limits and run status. A remediation rerun (03.06) adds a new row that supersedes a failed one: the old row stops counting, and dependents wait for the new row. `TestScheduler_HeadInstance` inserts such a row by hand; `RunService.Rerun` creates them ([rerun](templating-and-rerun.md#rerun)).
 
 ## Fairness and limits
 
@@ -91,7 +91,7 @@ The binary serves `/metrics`, `/healthz` and `/readyz` on `FF_SCHED_HTTP_ADDR` (
 
 ## Limitations
 
-- **`run_if: expr` stays `PENDING`.** Without an `ExprEvaluator` (03.06), such a task stays `PENDING`, and a warning is logged on every tick.
+- **An expression that can't be evaluated stays `PENDING`.** A type error at run time (for example `<` between a number and a string), or a loop wired without an `ExprEvaluator`, leaves the task `PENDING`, and a warning is logged on every tick. The run then needs a cancel or the workflow timeout.
 - **Pause, resume and `cancel_requested` belong to 03.05.** A PAUSED run is only skipped. Retries, timeouts and recovery are described in [recovery](recovery.md).
 - **Queue limits assume one leader.** `FF_QUEUE_LIMITS` counts are read in each run's transaction. With a single leader the runs are processed one at a time, so the counts are exact.
 - **The duration uses two clocks.** `flowforge_workflow_duration_seconds` subtracts the database-clock `started_at` from the scheduler clock (ADR-021). In production both are host clocks.

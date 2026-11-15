@@ -206,3 +206,27 @@ Format: Context → Decision → Alternatives considered → Consequences.
   - **Changed tests:** `transitions_test.go` (the `00E` copy and one event case) and 03.03's `TestWorker_ServerCancellation`, which now expects an attempt CANCELLED instead of FAILED.
   - **Tested by:** `TestCancel_*`, `TestPause_RunningFinishesNothingNewUntilResume`, `TestWorkflowTimeout_FailsRunAndCancelsTasks`, `TestProcessRun_CancelRequested`, `TestTimeoutLoop_EndsOverdueRuns` and `TestContract_API`.
 
+
+### ADR-008 / ADR-020 amendment — 03.06 — 2026-11-15
+- **What:**
+  - **`00E` §3.3:** run transition FAILED → RUNNING, used only by a remediation rerun. `completed_at` is cleared on any move back to RUNNING.
+  - **`00E` §3.4 and validation:** a new issue code `INVALID_REFERENCE`, for a `${…}` placeholder that doesn't parse and for a placeholder or `run_if_expr` path naming an unknown or non-ancestor task. Expression references that were `INVALID_RUN_IF` (02.02) now use it; syntax errors stay `INVALID_RUN_IF`.
+  - **`00E` §9:** `GET /runs/{run_id}/tasks` lists head instances by default; `?include_superseded=true` lists every generation.
+  - **Event payload:** `run.resumed` gains optional `actor`, `superseded_task_ids` and `rerun_task_ids`, and reuses `reason`.
+  - **Scheduler seams:** `InputResolver` and `ExprEvaluator` now receive the task's head **ancestors**, not only its direct dependencies (a superset, so `EvaluateReadiness` is unchanged). An optional `scheduler.RunBinder` lets an evaluator read the run input.
+  - **Rerun restarts the workflow deadline** at `now + timeout_seconds`.
+- **Why:**
+  - Task 03.06 allows a rerun of a FAILED run, which `00E` §3.3 had as terminal.
+  - The task names `INVALID_REFERENCE` for every bad reference.
+  - It asks for head-only listing by default, and for templates and expressions that read any ancestor and `run.input`.
+  - Without the deadline restart, a run that failed on its workflow timeout would fail again at once.
+- **Impact:**
+  - **Compatible:** a transition, an issue code and optional payload fields are added. Before this task no row could be superseded, so the head-only default lists exactly what it listed before.
+  - **Changed existing behavior:**
+    - A definition with a non-ancestor expression reference is still rejected, but with code `INVALID_REFERENCE` instead of `INVALID_RUN_IF`.
+    - `IsTerminalRun(FAILED)` stays true: only an operator's rerun reopens a FAILED run, and the scheduler never does.
+  - **Changed tests:**
+    - `dag/validate_test.go`: two expectations now use `INVALID_REFERENCE`.
+    - `transitions_test.go`: the `00E` copy, and one event case.
+    - The scheduler fake store now copies `run_if_expr` and `config`.
+  - **Tested by:** `TestResolve_*`, `TestEval_*`, `TestExpr_RandomInputsNeverPanic`, `TestValidate_Table`, `TestPlanRerun`, `TestProcessRun_ExprAndTemplatesSeeAncestors`, `TestTemplating_*`, `TestConditional_MarketDataFailureBranch`, `TestRerun_*` and `TestContract_API`.
