@@ -28,6 +28,7 @@ import (
 	"github.com/daishakpatel/flowforge/internal/persistence"
 	"github.com/daishakpatel/flowforge/internal/persistence/pg"
 	"github.com/daishakpatel/flowforge/internal/testutil"
+	"github.com/daishakpatel/flowforge/internal/workflow/model"
 )
 
 // apiEnv is the API wired to its own migrated database, as cmd/flowforge-api wires it, with one
@@ -95,7 +96,8 @@ func newAPIEnv(t *testing.T) *apiEnv {
 	runs := &service.RunService{
 		DB: pool, Tx: pg.NewTxManager(pool, clock.Real{}, nil), DefRepo: pg.NewDefinitionRepo(g),
 		RunRepo: pg.NewRunRepo(g, rec), TaskRepo: pg.NewTaskRepo(rec), AttemptRepo: pg.NewAttemptRepo(g, rec),
-		EventRepo: pg.EventRepo{},
+		EventRepo:  pg.EventRepo{},
+		RunControl: pg.RunControlRepo{}, Notify: pg.SchedulerRepo{}, Clock: clock.Real{}, CancelGrace: 30 * time.Second,
 	}
 	deps := testDeps(nil, wf, runs, func(ctx context.Context) error { return pool.Ping(ctx) })
 	clk := deps.Clock.(*clock.Fake)
@@ -256,6 +258,57 @@ func TestContract_API(t *testing.T) {
 	want(t, code, 200, "get run")
 	code, _, _ = do("GET", "/api/v1/runs/run_missing", nil)
 	want(t, code, 404, "missing run")
+
+	// Run control (03.05). Runs are moved by the repository here, as the scheduler would.
+	moveRun := func(id string, from, to model.RunStatus) {
+		t.Helper()
+		v, err := e.runs.Get(t.Context(), id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := e.runs.Tx.WithTx(t.Context(), pgx.TxOptions{}, func(tx pgx.Tx) error {
+			return e.runs.RunRepo.Transition(t.Context(), tx, persistence.RunTransitionParams{RunID: id, From: from, To: to, Version: v.Version})
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, op := range []string{"cancel", "pause", "resume"} {
+		code, _, _ = do("POST", "/api/v1/runs/run_missing/"+op, nil)
+		want(t, code, 404, op+" of a missing run")
+		code, _, _ = do("POST", "/api/v1/runs/"+run.ID+"/"+op, nil, e.bearer(auth.RoleViewer)...)
+		want(t, code, 403, op+" as viewer")
+	}
+	code, _, _ = do("POST", "/api/v1/runs/"+run.ID+"/pause", nil)
+	want(t, code, 409, "pause of a CREATED run")
+	code, _, _ = do("POST", "/api/v1/runs/"+run.ID+"/resume", nil)
+	want(t, code, 409, "resume of a CREATED run")
+	code, _, _ = do("POST", "/api/v1/runs/"+run.ID+"/cancel?force=maybe", nil)
+	want(t, code, 400, "cancel with a bad force flag")
+	for range 2 { // idempotent
+		code, body, _ = do("POST", "/api/v1/runs/"+run.ID+"/cancel", nil)
+		want(t, code, 200, "cancel a CREATED run")
+		if v := decodeBody[runResponse](t, body); v.ID != run.ID {
+			t.Errorf("cancel answered run %s", v.ID)
+		}
+	}
+	moveRun(first.ID, model.RunCreated, model.RunRunning)
+	for range 2 { // pausing a PAUSED run is a no-op
+		code, body, _ = do("POST", "/api/v1/runs/"+first.ID+"/pause", nil)
+		want(t, code, 200, "pause a RUNNING run")
+		if v := decodeBody[runResponse](t, body); v.Status != "PAUSED" {
+			t.Errorf("paused run is %s", v.Status)
+		}
+	}
+	code, body, _ = do("POST", "/api/v1/runs/"+first.ID+"/resume", nil)
+	want(t, code, 200, "resume a PAUSED run")
+	if v := decodeBody[runResponse](t, body); v.Status != "RUNNING" {
+		t.Errorf("resumed run is %s", v.Status)
+	}
+	code, _, _ = do("POST", "/api/v1/runs/"+first.ID+"/resume", nil)
+	want(t, code, 409, "resume of a RUNNING run")
+	moveRun(first.ID, model.RunRunning, model.RunFailed)
+	code, _, _ = do("POST", "/api/v1/runs/"+first.ID+"/cancel?force=true", nil)
+	want(t, code, 409, "cancel of a FAILED run")
 
 	code, body, _ = do("GET", "/api/v1/runs/"+run.ID+"/tasks", nil)
 	want(t, code, 200, "run tasks")

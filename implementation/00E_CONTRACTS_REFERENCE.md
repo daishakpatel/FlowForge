@@ -294,6 +294,7 @@ Election tick 10 × 100 ms = 1 s heartbeat tick 1 (100 ms); `PreVote` and `Check
 | `FF_API_HTTP_ADDR` / `FF_API_GRPC_ADDR` | `:8080` / `:9090` | api |
 | `FF_ADMIN_BOOTSTRAP_KEY` | (required in prod) | api |
 | `FF_AUTH_DISABLED` | `false` (`true` only in `dev`/`test`; every request runs as the dev admin) | api |
+| `FF_CANCEL_GRACE` | `30s` (cancel: grace before RUNNING attempts are force-cancelled; 03.05) | api |
 | `FF_API_RATE_LIMIT_RPS` | `50` (per API key; burst 2×; `worker` and `ai-readonly` keys 4×) | api |
 | `FF_RAFT_ENDPOINTS` | `raft-1:7000,raft-2:7000,raft-3:7000` | api, scheduler |
 | `FF_RAFT_NODE_ID`, `FF_RAFT_PEERS`, `FF_RAFT_DATA_DIR`, `FF_RAFT_CLIENT_ADDR`, `FF_RAFT_PEER_ADDR` | — | raft |

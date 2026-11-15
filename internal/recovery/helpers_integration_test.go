@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/daishakpatel/flowforge/internal/api/service"
 	"github.com/daishakpatel/flowforge/internal/clock"
 	workerv1 "github.com/daishakpatel/flowforge/internal/gen/proto/worker/v1"
 	"github.com/daishakpatel/flowforge/internal/persistence"
@@ -29,6 +30,7 @@ const (
 	leaseTTL     = 10 * time.Second
 	heartbeat    = time.Second
 	recoveryTick = 2 * time.Second
+	cancelGrace  = 30 * time.Second
 )
 
 // env is the real WorkerService (03.01) with the 03.04 RetryOutcomeHandler, plus the three
@@ -40,6 +42,7 @@ type env struct {
 	decide   *scheduler.DecisionLoop
 	timeouts *scheduler.TimeoutLoop
 	recov    *Loop
+	runs     *service.RunService // run control (03.05)
 	seq      atomic.Int64
 }
 
@@ -52,7 +55,11 @@ func newEnv(t *testing.T) *env {
 			return workerapi.NewRetryOutcomeHandler(s.Tasks, s.Runs, fc, nil) // jitter 0: exact delays
 		},
 	})
-	e := &env{srv: srv, clock: fc}
+	srv.Service.Cancels = workerapi.RunCancelSource{DB: srv.Pool, Runs: pg.RunControlRepo{}} // set before any worker calls
+	e := &env{srv: srv, clock: fc, runs: &service.RunService{
+		DB: srv.Pool, Tx: srv.TM, DefRepo: srv.Defs, RunRepo: srv.Runs, TaskRepo: srv.Tasks, AttemptRepo: srv.Attempts,
+		RunControl: pg.RunControlRepo{}, Notify: pg.SchedulerRepo{}, Clock: fc, CancelGrace: cancelGrace,
+	}}
 	e.syncClock(t)
 	e.build()
 	return e
@@ -69,6 +76,7 @@ func (e *env) build() {
 	e.timeouts = &scheduler.TimeoutLoop{
 		DB: s.Pool, Tx: s.TM, Cluster: pg.ClusterRepo{}, Recovery: pg.RecoveryRepo{}, Ender: ender,
 		Notify: pg.SchedulerRepo{}, Clock: e.clock, Tick: time.Second,
+		Runs: s.Runs, Sched: pg.SchedulerRepo{}, RunControl: pg.RunControlRepo{},
 	}
 	e.recov = &Loop{
 		DB: s.Pool, Tx: s.TM, Cluster: pg.ClusterRepo{}, Recovery: pg.RecoveryRepo{},
@@ -102,7 +110,13 @@ func once(t *testing.T, l interface {
 // clock so its tasks are claimable once queued. It returns the run id and task ids by key.
 func (e *env) startRun(t *testing.T, tasks ...string) (string, map[string]string) {
 	t.Helper()
-	raw := fmt.Sprintf(`{"name":"wf-%d","version":1,"tasks":[%s]}`, e.seq.Add(1), strings.Join(tasks, ","))
+	return e.startRunWith(t, "", tasks...)
+}
+
+// startRunWith is startRun with extra top-level definition fields, e.g. `"timeout_seconds":5,`.
+func (e *env) startRunWith(t *testing.T, extra string, tasks ...string) (string, map[string]string) {
+	t.Helper()
+	raw := fmt.Sprintf(`{"name":"wf-%d","version":1,%s"tasks":[%s]}`, e.seq.Add(1), extra, strings.Join(tasks, ","))
 	def, err := model.Decode([]byte(raw))
 	if err != nil {
 		t.Fatalf("decode %s: %v", raw, err)

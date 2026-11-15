@@ -242,6 +242,78 @@ paths:
         '429': {$ref: '#/components/responses/RateLimited'}
         '404': {$ref: '#/components/responses/NotFound'}
         default: {$ref: '#/components/responses/Error'}
+  /api/v1/runs/{run_id}/cancel:
+    post:
+      operationId: cancelRun
+      summary: Cancel a run (operator)
+      description: >-
+        Marks the run cancel-requested. Tasks that have not started are cancelled at once; workers
+        stop RUNNING attempts when their next heartbeat answer names them, and any still running
+        after FF_CANCEL_GRACE (at once with force=true) are force-cancelled. The run becomes
+        CANCELLED once every task has ended. Allowed from CREATED, RUNNING, PAUSED and
+        NEEDS_ATTENTION; repeating it, or cancelling a CANCELLED run, returns the run unchanged.
+      parameters:
+        - $ref: '#/components/parameters/RunID'
+        - name: force
+          in: query
+          description: Force-cancel RUNNING attempts at once instead of after the grace period.
+          schema: {type: boolean, default: false}
+      responses:
+        '200':
+          description: The run after the request (usually still RUNNING until its tasks end).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Run'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/runs/{run_id}/pause:
+    post:
+      operationId: pauseRun
+      summary: Pause a RUNNING run (operator)
+      description: >-
+        No more of the run's tasks are queued or claimed; running attempts finish normally. The
+        workflow deadline keeps running. Pausing a PAUSED run returns it unchanged; any other
+        status, or a run being cancelled, is 409 INVALID_STATE.
+      parameters:
+        - $ref: '#/components/parameters/RunID'
+      responses:
+        '200':
+          description: The run, PAUSED.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Run'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/runs/{run_id}/resume:
+    post:
+      operationId: resumeRun
+      summary: Resume a PAUSED run (operator)
+      description: >-
+        The run is RUNNING again and the scheduler picks it up at once. Any status other than
+        PAUSED, RUNNING included, is 409 INVALID_STATE.
+      parameters:
+        - $ref: '#/components/parameters/RunID'
+      responses:
+        '200':
+          description: The run, RUNNING.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Run'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        default: {$ref: '#/components/responses/Error'}
   /api/v1/runs/{run_id}/tasks:
     get:
       operationId: listRunTasks

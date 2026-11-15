@@ -62,6 +62,7 @@ Defaults are dev-only. "—" means there is no default.
 | `FF_API_GRPC_ADDR` | `:9090` | addr | `API` |
 | `FF_ADMIN_BOOTSTRAP_KEY` | — | required_in_prod, secret | `API` |
 | `FF_AUTH_DISABLED` | `false` | oneof `true false`; `true` rejected when `FF_ENV=prod` | `API` |
+| `FF_CANCEL_GRACE` | `30s` | positive; how long workers get to stop a cancelled run's RUNNING attempts before they are force-cancelled ([run control](architecture/run-control.md)) | `API` |
 | `FF_API_RATE_LIMIT_RPS` | `50` | positive; per API key, burst 2×, service roles 4× | `API` |
 | `FF_RAFT_ENDPOINTS` | `raft-1:7000,raft-2:7000,raft-3:7000` | addr (each) | `API`, `Scheduler` |
 | `FF_SCHED_HTTP_ADDR` | `:8081` | addr; serves `/metrics`, `/healthz`, `/readyz` | `Scheduler` |

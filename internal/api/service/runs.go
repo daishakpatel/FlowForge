@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/daishakpatel/flowforge/internal/apperrors"
+	"github.com/daishakpatel/flowforge/internal/clock"
 	"github.com/daishakpatel/flowforge/internal/persistence"
 	"github.com/daishakpatel/flowforge/internal/workflow/model"
 )
@@ -29,6 +31,11 @@ type RunService struct {
 	TaskRepo    persistence.TaskRepo
 	AttemptRepo persistence.AttemptRepo
 	EventRepo   persistence.EventRepo
+	// Run control (task 03.05).
+	RunControl  persistence.RunControlRepo
+	Notify      persistence.Notifier // wakes the scheduler after cancel and resume
+	Clock       clock.Clock
+	CancelGrace time.Duration // FF_CANCEL_GRACE: how long workers get to stop RUNNING attempts
 }
 
 // StartRunParams is the input of RunService.Start. Empty strings are "not set".
@@ -165,4 +172,89 @@ func (s *RunService) Attempts(ctx context.Context, taskID string) ([]persistence
 		return nil, err
 	}
 	return s.AttemptRepo.ListByTask(ctx, s.DB, taskID)
+}
+
+// Cancel requests a run's cancellation (FR-WF-10, task 03.05) and returns the run. The scheduler
+// cancels the tasks that have not started at once; RUNNING ones are cancelled by their workers
+// (told in heartbeat answers) or, after CancelGrace (at once with force), force-cancelled, and
+// then the run becomes CANCELLED. Cancelling a CANCELLED run, or one already cancel-requested,
+// returns it unchanged; a SUCCEEDED or FAILED run is INVALID_STATE. Shared by REST and approved
+// actions (06.06).
+func (s *RunService) Cancel(ctx context.Context, id string, force bool) (persistence.RunView, error) {
+	var out persistence.RunView
+	err := s.Tx.WithTx(ctx, pgx.TxOptions{}, func(tx pgx.Tx) error {
+		cur, err := s.RunRepo.Get(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		if cur.Status == model.RunCancelled {
+			out = cur
+			return nil
+		}
+		forceAt := s.Clock.Now()
+		if !force {
+			forceAt = forceAt.Add(s.CancelGrace)
+		}
+		if out, err = s.RunControl.RequestCancel(ctx, tx, id, forceAt); err != nil {
+			return err
+		}
+		return s.Notify.Notify(ctx, tx, persistence.SchedulerWakeChannel)
+	})
+	return out, err
+}
+
+// Pause moves a RUNNING run to PAUSED (task 03.05): the scheduler stops queueing its tasks and
+// requeueing its retries, and workers stop claiming them; running attempts finish normally. The
+// workflow deadline keeps running. Pausing a PAUSED run returns it unchanged; any other status,
+// or a run being cancelled, is INVALID_STATE.
+func (s *RunService) Pause(ctx context.Context, id string) (persistence.RunView, error) {
+	return s.move(ctx, id, model.RunRunning, model.RunPaused, true)
+}
+
+// Resume moves a PAUSED run back to RUNNING and wakes the scheduler (task 03.05). Any other
+// status, a RUNNING run included, is INVALID_STATE.
+func (s *RunService) Resume(ctx context.Context, id string) (persistence.RunView, error) {
+	return s.move(ctx, id, model.RunPaused, model.RunRunning, false)
+}
+
+// move runs one run transition from → to with the run's current version, retrying when the run
+// changed under it (CONFLICT). With idempotent, a run already in to is returned unchanged.
+func (s *RunService) move(ctx context.Context, id string, from, to model.RunStatus, idempotent bool) (persistence.RunView, error) {
+	var out persistence.RunView
+	for range 3 {
+		err := s.Tx.WithTx(ctx, pgx.TxOptions{}, func(tx pgx.Tx) error {
+			cur, err := s.RunRepo.Get(ctx, tx, id)
+			if err != nil {
+				return err
+			}
+			if cur.Status == to && idempotent {
+				out = cur
+				return nil
+			}
+			if cur.Status != from || cur.CancelRequested {
+				return apperrors.InvalidState(fmt.Sprintf("run %s is %s%s; it cannot become %s", id, cur.Status, cancelNote(cur), to))
+			}
+			if err := s.RunRepo.Transition(ctx, tx, persistence.RunTransitionParams{RunID: id, From: from, To: to, Version: cur.Version}); err != nil {
+				return err
+			}
+			if to == model.RunRunning {
+				if err := s.Notify.Notify(ctx, tx, persistence.SchedulerWakeChannel); err != nil {
+					return err
+				}
+			}
+			out, err = s.RunRepo.Get(ctx, tx, id)
+			return err
+		})
+		if apperrors.CodeOf(err) != apperrors.CodeConflict {
+			return out, err
+		}
+	}
+	return out, apperrors.Conflict(fmt.Sprintf("run %s kept changing; retry", id))
+}
+
+func cancelNote(r persistence.RunView) string {
+	if r.CancelRequested {
+		return " and being cancelled"
+	}
+	return ""
 }

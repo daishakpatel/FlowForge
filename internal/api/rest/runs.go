@@ -2,11 +2,13 @@ package rest
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -147,6 +149,42 @@ func runFilter(r *http.Request) (persistence.RunFilter, error) {
 
 func (h *handlers) getRun(w http.ResponseWriter, r *http.Request) {
 	v, err := h.runs.Get(r.Context(), chi.URLParam(r, "run_id"))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toRun(v))
+}
+
+// cancelRun is POST /api/v1/runs/{run_id}/cancel[?force=true] (task 03.05).
+func (h *handlers) cancelRun(w http.ResponseWriter, r *http.Request) {
+	force := false
+	if v := r.URL.Query().Get("force"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			writeError(w, r, apperrors.InvalidArgument("force must be true or false"))
+			return
+		}
+		force = b
+	}
+	h.runControl(w, r, func(ctx context.Context, id string) (persistence.RunView, error) {
+		return h.runs.Cancel(ctx, id, force)
+	})
+}
+
+// pauseRun is POST /api/v1/runs/{run_id}/pause (task 03.05).
+func (h *handlers) pauseRun(w http.ResponseWriter, r *http.Request) {
+	h.runControl(w, r, func(ctx context.Context, id string) (persistence.RunView, error) { return h.runs.Pause(ctx, id) })
+}
+
+// resumeRun is POST /api/v1/runs/{run_id}/resume (task 03.05).
+func (h *handlers) resumeRun(w http.ResponseWriter, r *http.Request) {
+	h.runControl(w, r, func(ctx context.Context, id string) (persistence.RunView, error) { return h.runs.Resume(ctx, id) })
+}
+
+// runControl answers a run-control request with the run's state after it, 200.
+func (h *handlers) runControl(w http.ResponseWriter, r *http.Request, do func(ctx context.Context, id string) (persistence.RunView, error)) {
+	v, err := do(r.Context(), chi.URLParam(r, "run_id"))
 	if err != nil {
 		writeError(w, r, err)
 		return

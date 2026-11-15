@@ -106,6 +106,7 @@ func run(ctx context.Context, opts config.Options, logOut io.Writer, listen func
 			DB: pool, Tx: txm, DefRepo: defs,
 			RunRepo: pg.NewRunRepo(gen, rec), TaskRepo: pg.NewTaskRepo(rec),
 			AttemptRepo: pg.NewAttemptRepo(gen, rec), EventRepo: pg.EventRepo{},
+			RunControl: pg.RunControlRepo{}, Notify: pg.SchedulerRepo{}, Clock: clock.Real{}, CancelGrace: cfg.CancelGrace,
 		},
 		Auth: authn, IDs: gen, Clock: clock.Real{}, Logger: logger,
 		Metrics: reg,
@@ -213,7 +214,7 @@ func newWorkerServer(reg *obs.Registry, authn auth.Authenticator, gen ids.Genera
 	tasks := pg.NewTaskRepo(rec)
 	svc := &workerapi.Service{
 		DB: pool, Tx: txm, Tasks: tasks, Attempts: pg.NewAttemptRepo(gen, rec), Workers: pg.WorkerRepo{},
-		Logs: pg.TaskLogRepo{}, Outcomes: retryHandler(tasks, gen, rec), Cancels: workerapi.NoCancels{},
+		Logs: pg.TaskLogRepo{}, Outcomes: retryHandler(tasks, gen, rec), Cancels: workerapi.RunCancelSource{DB: pool, Runs: pg.RunControlRepo{}},
 		Leases: &workerapi.PGLeaseProvider{DB: pool, Workers: pg.WorkerRepo{}, Clock: clock.Real{}, TTL: cfg.WorkerLeaseTTL},
 		Waker:  waker, Wake: pg.SchedulerRepo{}, Clock: clock.Real{}, LeaseTTL: cfg.WorkerLeaseTTL, HeartbeatInterval: cfg.WorkerHeartbeat,
 		StaleRejections: stale.WithLabelValues(),

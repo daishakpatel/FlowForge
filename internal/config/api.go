@@ -13,6 +13,9 @@ type API struct {
 	RaftEndpoints     []string      `env:"FF_RAFT_ENDPOINTS" default:"raft-1:7000,raft-2:7000,raft-3:7000" validate:"addr"`
 	WorkerLeaseTTL    time.Duration `env:"FF_WORKER_LEASE_TTL" default:"15s" validate:"positive"`
 	WorkerHeartbeat   time.Duration `env:"FF_WORKER_HEARTBEAT" default:"5s" validate:"positive"`
+	// CancelGrace is how long workers get to stop a cancelled run's RUNNING attempts before the
+	// scheduler force-cancels them (task 03.05).
+	CancelGrace time.Duration `env:"FF_CANCEL_GRACE" default:"30s" validate:"positive"`
 	// AuthDisabled ("true"/"false") lets every request through as the dev principal (task
 	// 02.04). Dev and test only: Load rejects "true" when FF_ENV=prod.
 	AuthDisabled string `env:"FF_AUTH_DISABLED" default:"false" validate:"oneof=true false"`
