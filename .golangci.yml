@@ -46,6 +46,7 @@ linters:
             - "**/internal/workflow/model/**"
             - "**/internal/workflow/statemachine/**"
             - "**/internal/workflow/template/**"
+            - "**/internal/workflow/expr/**"
           deny:
             - pkg: database/sql
               desc: domain logic is database-free (ADR-020)
