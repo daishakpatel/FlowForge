@@ -61,7 +61,7 @@ func TestPromotionOrder(t *testing.T) {
 		task("t7", model.TaskRunning, 0, 0),
 	}
 	var got []string
-	for _, v := range promotionOrder(heads) {
+	for _, v := range promotionOrder(heads, t0) {
 		got = append(got, v.ID)
 	}
 	if want := []string{"t4", "t5", "t6", "t3", "t1"}; !slices.Equal(got, want) {

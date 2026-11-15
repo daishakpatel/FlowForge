@@ -123,7 +123,7 @@ func (e *env) runStatus(t *testing.T, runID string) model.RunStatus {
 // tick runs one scheduler tick at epoch 0 and fails the test on a stale epoch.
 func (e *env) tick(t *testing.T) {
 	t.Helper()
-	if err := e.loop.tick(t.Context(), AlwaysLeader{}); err != nil {
+	if err := e.loop.Once(t.Context(), AlwaysLeader{}); err != nil {
 		t.Fatal(err)
 	}
 }

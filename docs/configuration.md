@@ -70,8 +70,8 @@ Defaults are dev-only. "—" means there is no default.
 | `FF_LEADER_TTL` | `10s` | positive | `Scheduler` |
 | `FF_LEADER_RENEW` | `3s` | positive, < TTL/2 | `Scheduler` |
 | `FF_KAFKA_BROKERS` | `localhost:9092` | addr (each) | `Scheduler` (outbox relay), `Worker`, `Processor` |
-| `FF_WORKER_LEASE_TTL` | `15s` | positive | `API`, `Worker` |
-| `FF_WORKER_HEARTBEAT` | `5s` | positive, < lease TTL/2 | `API`, `Worker` |
+| `FF_WORKER_LEASE_TTL` | `15s` | positive | `API`, `Worker`, `Scheduler` (recovery) |
+| `FF_WORKER_HEARTBEAT` | `5s` | positive, < lease TTL/2 | `API`, `Worker`, `Scheduler` (recovery) |
 | `FF_WORKER_ID` | — | required | `Worker` |
 | `FF_WORKER_QUEUES` | — | required (list) | `Worker` |
 | `FF_WORKER_CAPACITY` | — | positive | `Worker` |
@@ -92,6 +92,7 @@ Not read through `internal/config`:
 
 - `FF_DEV_PG_PORT`, `FF_DEV_MD_PORT`: Compose host ports ([development guide](development.md)).
 - `FF_TEST_PG_DSN`, `FF_TEST_MD_DSN`, `FF_TEST_REQUIRE_DOCKER`: read by `internal/testutil`, the one package besides `internal/config` and `cmd/**` that the lint rule lets read the environment (`00A` amendment of 01.02).
+- `FF_FAILPOINTS`: read by `internal/testutil/failpoint` in test builds with the tag `failpoint` only; `name=error|panic` items arm crash-consistency failpoints ([recovery](architecture/recovery.md)). Production builds ignore it.
 - `AI_*`: the Python AI service's own settings (task 06.01), with the names in `00E` §6.
 
 ## Secrets

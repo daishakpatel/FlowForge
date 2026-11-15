@@ -147,6 +147,22 @@ type SchedulerRepo interface {
 	QueuedByQueue(ctx context.Context, q Querier) (map[string]int, error)
 }
 
+// RecoveryRepo holds the reads of the timeout and worker-loss loops and the worker LOST mark
+// (task 03.04). Ending an attempt still goes through AttemptRepo.Transition (ADR-020). Times
+// are the caller's injected clock.
+type RecoveryRepo interface {
+	// OverdueAttempts returns up to limit RUNNING attempts with deadline_at <= now, oldest first.
+	OverdueAttempts(ctx context.Context, q Querier, now time.Time, limit int) ([]AttemptView, error)
+	// RunningAttemptsOf returns up to limit RUNNING attempts of workerID.
+	RunningAttemptsOf(ctx context.Context, q Querier, workerID string, limit int) ([]AttemptView, error)
+	// OrphanedAttempts returns up to limit RUNNING attempts whose worker is not in alive and whose
+	// last heartbeat (or start) is before before.
+	OrphanedAttempts(ctx context.Context, q Querier, alive []string, before time.Time, limit int) ([]AttemptView, error)
+	// MarkWorkerLost marks workerID LOST if it is still ACTIVE and unseen since before, and
+	// reports whether it did.
+	MarkWorkerLost(ctx context.Context, q Querier, workerID string, before time.Time) (bool, error)
+}
+
 // NewDefinition is the input of DefinitionRepo.Create.
 type NewDefinition struct {
 	Name       string

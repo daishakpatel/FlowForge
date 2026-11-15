@@ -12,6 +12,7 @@ import (
 	"github.com/daishakpatel/flowforge/internal/events"
 	"github.com/daishakpatel/flowforge/internal/logging"
 	"github.com/daishakpatel/flowforge/internal/persistence"
+	"github.com/daishakpatel/flowforge/internal/testutil/failpoint"
 	"github.com/daishakpatel/flowforge/internal/workflow/model"
 	"github.com/daishakpatel/flowforge/internal/workflow/statemachine"
 )
@@ -78,7 +79,7 @@ func (l *DecisionLoop) processRun(ctx context.Context, tx pgx.Tx, runID string, 
 		d.heads = append(d.heads, &rows[i])
 		d.byKey[rows[i].Key] = &rows[i]
 	}
-	for _, step := range []func(context.Context) (bool, error){d.start, d.evaluate, d.promote, d.finish} {
+	for _, step := range []func(context.Context) (bool, error){d.start, d.evaluate, d.checkpoint, d.promote, d.finish} {
 		if ok, err := step(ctx); err != nil || !ok {
 			return d.res, err
 		}
@@ -89,6 +90,11 @@ func (l *DecisionLoop) processRun(ctx context.Context, tx pgx.Tx, runID string, 
 		}
 	}
 	return d.res, nil
+}
+
+// checkpoint is the failpoint between readiness and promotion (crash-consistency tests, 03.04).
+func (d *decision) checkpoint(context.Context) (bool, error) {
+	return true, failpoint.Inject(failpoint.ProcessRunMidway)
 }
 
 // start moves a CREATED run to RUNNING. It returns false when another decision got there first.
@@ -132,7 +138,7 @@ func (d *decision) evaluate(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-// promote queues READY tasks in promotionOrder while the budget allows. A task of a full queue
+// promote queues READY tasks and due RETRY_WAIT tasks in promotionOrder while the budget allows. A task of a full queue
 // is passed over, so tasks of other queues can still go.
 func (d *decision) promote(ctx context.Context) (bool, error) {
 	queueActive := map[string]int{}
@@ -143,7 +149,7 @@ func (d *decision) promote(ctx context.Context) (bool, error) {
 		}
 	}
 	b := newBudget(d.def.Concurrency.MaxParallelTasks, activeCount(d.heads), d.l.QueueLimits, queueActive, maxPromotionsPerRun)
-	for _, t := range promotionOrder(d.heads) {
+	for _, t := range promotionOrder(d.heads, d.l.Clock.Now()) {
 		if b.exhausted() {
 			break
 		}
@@ -165,6 +171,9 @@ func (d *decision) promote(ctx context.Context) (bool, error) {
 // queue resolves t's input and moves it READY → QUEUED, or READY → FAILED with
 // ErrorCodeInvalidInput when resolution fails. It reports whether t was queued.
 func (d *decision) queue(ctx context.Context, t *persistence.TaskView) (bool, error) {
+	if t.Status == model.TaskRetryWait { // its input was resolved before the first attempt
+		return d.moveTask(ctx, t, model.TaskQueued, nil, nil)
+	}
 	deps := d.deps(t)
 	views := make([]persistence.TaskView, len(deps))
 	for i, dep := range deps {

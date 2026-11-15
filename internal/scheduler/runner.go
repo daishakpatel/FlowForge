@@ -2,12 +2,18 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"runtime/debug"
 	"sync"
+	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/daishakpatel/flowforge/internal/clock"
 	"github.com/daishakpatel/flowforge/internal/logging"
+	"github.com/daishakpatel/flowforge/internal/persistence"
 )
 
 // Loop is one leader-only background job: the scheduler loop here, retries and recovery (03.04),
@@ -102,4 +108,63 @@ func runLoop(ctx context.Context, l Loop, g Gate) (err error) {
 		return fmt.Errorf("loop %s: %w", l.Name(), err)
 	}
 	return nil
+}
+
+// maxLoopBackoff caps how long a loop waits after repeated failures (03.04 degraded behavior).
+const maxLoopBackoff = 30 * time.Second
+
+// ErrorBackoff is how long a loop waits after its failures-th consecutive failed iteration: the
+// tick doubled per failure, capped at 30 s. A database outage therefore costs a few queries a
+// minute, and the loop resumes within 30 s of recovery.
+func ErrorBackoff(failures int, tick time.Duration) time.Duration {
+	d := tick << min(failures, 10)
+	if d <= 0 || d > maxLoopBackoff {
+		return maxLoopBackoff
+	}
+	return d
+}
+
+// RunTicking runs once every tick, or sooner when wake fires, until ctx ends (returning nil).
+// An error wrapping persistence.ErrStaleEpoch is returned: this scheduler must stop deciding.
+// Any other error is logged, counted in flowforge_loop_errors_total{loop=name} and followed by
+// ErrorBackoff instead of the tick; the loop never gives up on a transient failure such as a
+// database outage. once must make every decision inside a transaction (03.04).
+func RunTicking(ctx context.Context, name string, c clock.Clock, tick time.Duration, wake Waker,
+	errs *prometheus.CounterVec, once func(context.Context) error) error {
+	failures := 0
+	for {
+		var woken <-chan struct{}
+		if wake != nil && failures == 0 {
+			woken = wake.Wait() // before the iteration, so a notification during it is not missed
+		}
+		err := once(ctx)
+		switch {
+		case errors.Is(err, persistence.ErrStaleEpoch):
+			logging.FromContext(ctx).ErrorContext(ctx, "scheduler epoch is stale; stopping",
+				"loop", name, "reason", "STALE_EPOCH", logging.Err(err))
+			return err
+		case err != nil && ctx.Err() == nil:
+			failures++
+			if errs != nil {
+				errs.WithLabelValues(name).Inc()
+			}
+			logging.FromContext(ctx).WarnContext(ctx, "loop iteration failed; backing off",
+				"loop", name, "failures", failures, logging.Err(err))
+		default:
+			failures = 0
+		}
+		wait := tick
+		if failures > 0 {
+			wait = ErrorBackoff(failures, tick)
+		}
+		t := c.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			t.Stop()
+			return nil
+		case <-t.C():
+		case <-woken:
+			t.Stop()
+		}
+	}
 }

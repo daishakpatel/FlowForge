@@ -3,6 +3,7 @@ package scheduler
 import (
 	"cmp"
 	"slices"
+	"time"
 
 	"github.com/daishakpatel/flowforge/internal/persistence"
 	"github.com/daishakpatel/flowforge/internal/workflow/model"
@@ -51,12 +52,13 @@ func (b *budget) use(queue string) {
 	}
 }
 
-// promotionOrder returns the READY tasks among heads in the order they are queued: oldest
+// promotionOrder returns the tasks among heads that may be queued now, in the order they are
+// queued: READY tasks, and RETRY_WAIT tasks whose available_at has come (03.04), oldest
 // available_at first, then creation order (task 03.02 §4).
-func promotionOrder(heads []*persistence.TaskView) []*persistence.TaskView {
+func promotionOrder(heads []*persistence.TaskView, now time.Time) []*persistence.TaskView {
 	var ready []*persistence.TaskView
 	for _, t := range heads {
-		if t.Status == model.TaskReady {
+		if t.Status == model.TaskReady || (t.Status == model.TaskRetryWait && !t.AvailableAt.After(now)) {
 			ready = append(ready, t)
 		}
 	}

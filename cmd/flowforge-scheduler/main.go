@@ -1,5 +1,7 @@
-// Command flowforge-scheduler runs the scheduler loop (task 03.02): it promotes tasks PENDING →
-// READY/SKIPPED → QUEUED and drives run status. It never talks to workers.
+// Command flowforge-scheduler runs the leader loops: the decision loop (task 03.02) promotes
+// tasks PENDING → READY/SKIPPED → QUEUED, requeues due retries and drives run status; the
+// timeout and recovery loops (03.04) end overdue attempts and recover lost workers' work. It
+// never talks to workers.
 //
 // Leadership comes from scheduler.AlwaysLeader (single-scheduler mode, epoch 0) until task 04.07
 // adds the Raft-backed Gate. It refuses to start on a schema older than its migrations, serves
@@ -32,6 +34,7 @@ import (
 	"github.com/daishakpatel/flowforge/internal/persistence"
 	"github.com/daishakpatel/flowforge/internal/persistence/migrate"
 	"github.com/daishakpatel/flowforge/internal/persistence/pg"
+	"github.com/daishakpatel/flowforge/internal/recovery"
 	"github.com/daishakpatel/flowforge/internal/scheduler"
 	"github.com/daishakpatel/flowforge/internal/version"
 	"github.com/daishakpatel/flowforge/internal/workerapi"
@@ -78,6 +81,10 @@ func run(ctx context.Context, opts config.Options, logOut io.Writer, listen func
 	if err != nil {
 		return err
 	}
+	loopErrors, err := scheduler.NewLoopErrors(reg)
+	if err != nil {
+		return err
+	}
 	gen := ids.NewGenerator(clock.Real{}, crand.Reader)
 	rec := events.NewRecorder(clock.Real{}, gen, "flowforge-scheduler")
 	//nolint:gosec // G404: jitter for transaction retries needs no cryptographic randomness
@@ -85,13 +92,29 @@ func run(ctx context.Context, opts config.Options, logOut io.Writer, listen func
 	waker := workerapi.NewChannelWaker(func(ctx context.Context) (*pgx.Conn, error) {
 		return pgx.Connect(ctx, dsn)
 	}, clock.Real{}, persistence.SchedulerWakeChannel)
+	txm, runs, tasks := pg.NewTxManager(pool, clock.Real{}, rng), pg.NewRunRepo(gen, rec), pg.NewTaskRepo(rec)
+	//nolint:gosec // G404: retry jitter needs no cryptographic randomness
+	jitter := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 1))
+	ender := workerapi.AttemptEnder{
+		Attempts: pg.NewAttemptRepo(gen, rec), Tasks: tasks,
+		Outcomes: workerapi.NewRetryOutcomeHandler(tasks, runs, clock.Real{}, jitter),
+	}
 	runner := scheduler.NewRunner(scheduler.AlwaysLeader{})
 	runner.RegisterLoop(&scheduler.DecisionLoop{
-		DB: pool, Tx: pg.NewTxManager(pool, clock.Real{}, rng), Cluster: pg.ClusterRepo{},
-		Sched: pg.SchedulerRepo{}, Notify: pg.SchedulerRepo{},
-		Runs: pg.NewRunRepo(gen, rec), Tasks: pg.NewTaskRepo(rec), Defs: pg.NewDefinitionRepo(gen),
+		DB: pool, Tx: txm, Cluster: pg.ClusterRepo{}, Sched: pg.SchedulerRepo{}, Notify: pg.SchedulerRepo{},
+		Runs: runs, Tasks: tasks, Defs: pg.NewDefinitionRepo(gen),
 		Inputs: scheduler.IdentityResolver{}, Clock: clock.Real{}, Tick: cfg.Tick,
-		QueueLimits: cfg.QueueLimitMap(), Wake: waker, Metrics: metrics,
+		QueueLimits: cfg.QueueLimitMap(), Wake: waker, Metrics: metrics, Errors: loopErrors,
+	})
+	runner.RegisterLoop(&scheduler.TimeoutLoop{
+		DB: pool, Tx: txm, Cluster: pg.ClusterRepo{}, Recovery: pg.RecoveryRepo{}, Ender: ender,
+		Notify: pg.SchedulerRepo{}, Clock: clock.Real{}, Tick: time.Second, Errors: loopErrors,
+	})
+	runner.RegisterLoop(&recovery.Loop{
+		DB: pool, Tx: txm, Cluster: pg.ClusterRepo{}, Recovery: pg.RecoveryRepo{},
+		Leases: &workerapi.PGLeaseProvider{DB: pool, Workers: pg.WorkerRepo{}, Clock: clock.Real{}, TTL: cfg.WorkerLeaseTTL},
+		Ender:  ender, Notify: pg.SchedulerRepo{}, Events: rec, Clock: clock.Real{}, Tick: 2 * time.Second,
+		LeaseTTL: cfg.WorkerLeaseTTL, Heartbeat: cfg.WorkerHeartbeat, Errors: loopErrors,
 	})
 
 	ln, err := listen(ctx, "tcp", cfg.HTTPAddr)

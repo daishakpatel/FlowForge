@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/daishakpatel/flowforge/internal/clock"
 	"github.com/daishakpatel/flowforge/internal/logging"
@@ -46,8 +47,9 @@ type DecisionLoop struct {
 	// QueueLimits caps QUEUED+RUNNING tasks per queue across runs (FF_QUEUE_LIMITS); queues not
 	// listed are unlimited.
 	QueueLimits map[string]int
-	Wake        Waker    // optional
-	Metrics     *Metrics // optional
+	Wake        Waker                  // optional
+	Metrics     *Metrics               // optional
+	Errors      *prometheus.CounterVec // flowforge_loop_errors_total; optional
 
 	pageSize int // runs per tick; 0 means runsPerTick (tests shrink it)
 
@@ -63,38 +65,20 @@ func (l *DecisionLoop) Name() string { return "scheduler" }
 
 // Run implements Loop. It returns nil when ctx ends and an error wrapping
 // persistence.ErrStaleEpoch when the stored epoch is not gate.Epoch(): another scheduler has
-// taken over, so this one stops deciding.
+// taken over, so this one stops deciding. Other failures back off (RunTicking).
 func (l *DecisionLoop) Run(ctx context.Context, gate Gate) error {
-	ticker := l.Clock.NewTicker(l.Tick)
-	defer ticker.Stop()
-	for {
-		var wake <-chan struct{}
-		if l.Wake != nil {
-			wake = l.Wake.Wait() // before the tick, so a notification during it is not missed
-		}
-		if err := l.tick(ctx, gate); err != nil {
-			logging.FromContext(ctx).ErrorContext(ctx, "scheduler epoch is stale; stopping",
-				"reason", "STALE_EPOCH", "epoch", gate.Epoch(), logging.Err(err))
-			return err
-		}
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-ticker.C():
-		case <-wake:
-		}
-	}
+	return RunTicking(ctx, l.Name(), l.Clock, l.Tick, l.Wake, l.Errors, func(ctx context.Context) error { return l.Once(ctx, gate) })
 }
 
-// tick processes one page of runs and refreshes the queue depth. Per-run failures are logged
-// and retried next tick; only a stale epoch is returned.
-func (l *DecisionLoop) tick(ctx context.Context, gate Gate) error {
+// Once processes one page of runs and refreshes the queue depth. A run that fails is logged,
+// counted and retried next iteration; the page or depth query failing (the database is down) is
+// returned so Run backs off, as is a stale epoch.
+func (l *DecisionLoop) Once(ctx context.Context, gate Gate) error {
 	start := l.Clock.Now()
 	logger := logging.FromContext(ctx)
 	ids, err := l.page(ctx)
 	if err != nil {
-		logger.WarnContext(ctx, "list active runs", logging.Err(err))
-		return nil
+		return fmt.Errorf("list active runs: %w", err)
 	}
 	done := gate.Done()
 	for _, id := range ids {
@@ -111,15 +95,18 @@ func (l *DecisionLoop) tick(ctx context.Context, gate Gate) error {
 			return err
 		case err != nil && ctx.Err() == nil:
 			logger.ErrorContext(ctx, "process run", "run_id", id, logging.Err(err))
+			if l.Errors != nil {
+				l.Errors.WithLabelValues(l.Name()).Inc()
+			}
 		case err == nil:
 			l.Metrics.record(res)
 		}
 	}
-	if depth, err := l.Sched.QueuedByQueue(ctx, l.DB); err == nil {
-		l.Metrics.setQueueDepth(depth)
-	} else if ctx.Err() == nil {
-		logger.WarnContext(ctx, "read queue depth", logging.Err(err))
+	depth, err := l.Sched.QueuedByQueue(ctx, l.DB)
+	if err != nil {
+		return fmt.Errorf("read queue depth: %w", err)
 	}
+	l.Metrics.setQueueDepth(depth)
 	if l.Metrics != nil {
 		l.Metrics.TickDuration.Observe(l.Clock.Now().Sub(start).Seconds())
 	}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -29,7 +30,7 @@ func newFakeLoop(t *testing.T) (*memStore, *DecisionLoop) {
 
 func tickOK(t *testing.T, l *DecisionLoop) {
 	t.Helper()
-	if err := l.tick(t.Context(), AlwaysLeader{}); err != nil {
+	if err := l.Once(t.Context(), AlwaysLeader{}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -168,7 +169,7 @@ func TestDecisionLoop_NoDecisionAfterTermEnds(t *testing.T) {
 	t.Parallel()
 	s, l := newFakeLoop(t)
 	run := s.addRun(diamond)
-	if err := l.tick(t.Context(), closedGate{}); err != nil {
+	if err := l.Once(t.Context(), closedGate{}); err != nil {
 		t.Fatal(err)
 	}
 	if s.runStatus(run) != model.RunCreated {
@@ -258,5 +259,67 @@ func TestDecisionLoop_PageWrapsRoundRobin(t *testing.T) {
 		if got := s.count("run.started"); got != want {
 			t.Fatalf("tick %d: %d runs started, want %d", i+1, got, want)
 		}
+	}
+}
+
+// TestProcessRun_PromotesDueRetries: a RETRY_WAIT task is queued once its available_at has come
+// on the injected clock (03.04), keeping the input resolved before its first attempt.
+func TestProcessRun_PromotesDueRetries(t *testing.T) {
+	t.Parallel()
+	s := newMemStore()
+	fc := clock.NewFake(time.Date(2026, 11, 14, 1, 0, 0, 0, time.UTC))
+	l := s.loop(fc)
+	run := s.addRun(`{"name":"r","version":1,"tasks":[{"id":"a","type":"t"}]}`)
+	tickOK(t, l)
+	a := s.task(run + "_a")
+	a.Status, a.Input, a.AvailableAt = model.TaskRetryWait, []byte(`{"kept":true}`), fc.Now().Add(2*time.Second)
+	tickOK(t, l)
+	if s.status(run, "a") != model.TaskRetryWait {
+		t.Fatal("a retry was queued before its available_at")
+	}
+	fc.Advance(2 * time.Second)
+	tickOK(t, l)
+	if s.status(run, "a") != model.TaskQueued || string(a.Input) != `{"kept":true}` || s.count("task.queued a") != 2 {
+		t.Fatalf("due retry: %s input %s, %d task.queued", s.status(run, "a"), a.Input, s.count("task.queued a"))
+	}
+}
+
+// TestRunTicking_BacksOffAndRecovers: a failing iteration is counted and followed by a growing,
+// capped backoff instead of the tick; a stale epoch stops the loop.
+func TestRunTicking_BacksOffAndRecovers(t *testing.T) {
+	t.Parallel()
+	if ErrorBackoff(1, time.Second) != 2*time.Second || ErrorBackoff(3, time.Second) != 8*time.Second || ErrorBackoff(20, time.Second) != maxLoopBackoff {
+		t.Fatal("ErrorBackoff must double per failure and cap at 30s")
+	}
+	fc := clock.NewFake(time.Date(2026, 11, 14, 1, 0, 0, 0, time.UTC))
+	errs, err := NewLoopErrors(obs.NewRegistry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int64
+	results := make(chan error, 8)
+	for _, e := range []error{errors.New("db down"), errors.New("db down"), nil, persistence.ErrStaleEpoch} {
+		results <- e
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- RunTicking(t.Context(), "test", fc, time.Second, nil, errs, func(context.Context) error {
+			calls.Add(1)
+			return <-results
+		})
+	}()
+	for _, wait := range []time.Duration{2 * time.Second, 4 * time.Second, time.Second} { // two backoffs, then the tick
+		fc.BlockUntilWaiters(1)
+		fc.Advance(wait - time.Millisecond)
+		if fc.Waiters() != 1 {
+			t.Fatalf("woke before %s", wait)
+		}
+		fc.Advance(time.Millisecond)
+	}
+	if err := <-done; !errors.Is(err, persistence.ErrStaleEpoch) {
+		t.Fatalf("RunTicking = %v, want the stale epoch", err)
+	}
+	if calls.Load() != 4 || promtest.ToFloat64(errs.WithLabelValues("test")) != 2 {
+		t.Fatalf("calls %d, errors %v", calls.Load(), promtest.ToFloat64(errs.WithLabelValues("test")))
 	}
 }

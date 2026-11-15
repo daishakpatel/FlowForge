@@ -18,7 +18,7 @@ func AllowedLabels() []string {
 	return []string{
 		"queue", "task_type", "status", "outcome", "node", "topic", "partition", "group",
 		"route", "method", "code", "peer", "reason", "stage", "kind", "tool", "disposition",
-		"result", "symbol",
+		"result", "symbol", "loop",
 	}
 }
 

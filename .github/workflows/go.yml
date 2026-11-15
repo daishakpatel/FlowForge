@@ -53,6 +53,7 @@ jobs:
         with:
           go-version-file: go.mod
       - run: make test-integration
+      - run: make test-crash
       - run: make openapi-check
 
   proto:

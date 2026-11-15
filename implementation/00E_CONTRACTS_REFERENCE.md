@@ -301,7 +301,7 @@ Election tick 10 × 100 ms = 1 s heartbeat tick 1 (100 ms); `PreVote` and `Check
 | `FF_SCHED_HTTP_ADDR` | `:8081` (`/metrics`, `/healthz`, `/readyz`) | scheduler |
 | `FF_QUEUE_LIMITS` | unset = unlimited (`queue=n,queue2=m`: max QUEUED+RUNNING tasks per queue across runs) | scheduler |
 | `FF_LEADER_TTL` / `FF_LEADER_RENEW` | `10s` / `3s` | scheduler |
-| `FF_WORKER_LEASE_TTL` / `FF_WORKER_HEARTBEAT` | `15s` / `5s` | api, worker |
+| `FF_WORKER_LEASE_TTL` / `FF_WORKER_HEARTBEAT` | `15s` / `5s` | api, worker, scheduler (recovery, 03.04) |
 | `FF_WORKER_ID`, `FF_WORKER_QUEUES`, `FF_WORKER_CAPACITY`, `FF_API_GRPC_TARGET`, `FF_WORKER_TOKEN` | — | worker |
 | `FF_WORKER_HTTP_ADDR` | `:8082` (`/metrics`, `/healthz`, `/readyz`) | worker |
 | `FF_WORKER_SHUTDOWN_GRACE` | `30s` | worker |
@@ -313,6 +313,7 @@ Election tick 10 × 100 ms = 1 s heartbeat tick 1 (100 ms); `PreVote` and `Check
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://otel-collector:4317` | all |
 | `FF_DEV_PG_PORT` / `FF_DEV_MD_PORT` | `5432` / `5433` | `docker-compose.yml` host ports (local dev only) |
 | `FF_TEST_PG_DSN` / `FF_TEST_MD_DSN` | unset (start containers) | `internal/testutil`: admin DSN (URL form) of an existing server (tests only) |
+| `FF_FAILPOINTS` | unset (test builds with tag `failpoint` only: `name=error|panic,…`) | crash-consistency tests (03.04) |
 | `FF_TEST_REQUIRE_DOCKER` | unset (skip without Docker) | `internal/testutil`: fail instead of skip when containers can't start (tests only; CI sets it) |
 
 Config precedence: defaults < config file (optional `FF_CONFIG_FILE`) < env. Secrets never logged (§ redaction). Loader, file format and validation rules: `docs/configuration.md` (task 01.03).
@@ -399,6 +400,7 @@ Metric names (prefix per component; labels low-cardinality only: `queue`, `task_
 - Outbox: `flowforge_outbox_backlog`, `flowforge_outbox_oldest_age_seconds`, `flowforge_outbox_publish_failures_total`.
 - Audit: `flowforge_audit_write_failures_total` (02.05; audit rows that could not be written while the request proceeded).
 - Worker gRPC: `flowforge_grpc_requests_total{method,code}`, `flowforge_grpc_request_duration_seconds{method}` (03.01).
+- Leader loops (03.04): `flowforge_loop_errors_total{loop}` (`scheduler`, `timeout`, `recovery`); the label `loop` joins the allowed labels.
 - Worker runtime (03.03): `flowforge_worker_task_outcomes_total{outcome}` (`succeeded`, `failed`, `cancelled`, `shutdown`, `stale`, `report_failed`), `flowforge_worker_log_lines_dropped_total`.
 - Coordination: `flowforge_leader_changes_total`, `flowforge_raft_leader_changes_total`.
 - Tracing: dropped-span counter `flowforge_otel_dropped_spans_total`.

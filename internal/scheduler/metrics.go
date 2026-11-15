@@ -67,6 +67,18 @@ func NewMetrics(reg *obs.Registry) (*Metrics, error) {
 	}, nil
 }
 
+// NewLoopErrors registers flowforge_loop_errors_total{loop}: failed iterations of a leader loop
+// (scheduler, timeout, recovery), for RunTicking.
+func NewLoopErrors(reg *obs.Registry) (*prometheus.CounterVec, error) {
+	c, err := reg.Counter(prometheus.CounterOpts{
+		Name: "flowforge_loop_errors_total", Help: "Failed iterations of a scheduler loop; the loop backs off and retries.",
+	}, "loop")
+	if err != nil {
+		return nil, fmt.Errorf("register loop error metric: %w", err)
+	}
+	return c, nil
+}
+
 // record applies one committed processRun result.
 func (m *Metrics) record(r result) {
 	if m == nil {
