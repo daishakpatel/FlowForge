@@ -176,9 +176,10 @@ UPDATE workflow_tasks SET
   input         = COALESCE($2::jsonb, input),
   result        = COALESCE($3::jsonb, result),
   attempt_count = attempt_count + $4::int,
-  available_at  = CASE WHEN $5::bigint IS NULL THEN available_at
-                       ELSE now() + $5::bigint * interval '1 millisecond' END
-WHERE id = $6 AND status = $7::text
+  available_at  = CASE WHEN $5::timestamptz IS NOT NULL THEN $5::timestamptz
+                       WHEN $6::bigint IS NULL THEN available_at
+                       ELSE now() + $6::bigint * interval '1 millisecond' END
+WHERE id = $7 AND status = $8::text
 RETURNING id, run_id, task_key, task_type, queue_name, status, depends_on, run_if, run_if_expr, config, input, result, retry_policy, timeout_seconds, attempt_count, available_at, supersedes_task_id, created_at, updated_at, version
 `
 
@@ -187,20 +188,23 @@ type TransitionTaskParams struct {
 	Input            []byte
 	Result           []byte
 	AttemptIncrement int32
+	AvailableAt      pgtype.Timestamptz
 	RetryDelayMs     pgtype.Int8
 	ID               string
 	FromStatus       string
 }
 
 // Conditional transition (ADR-020): no row when the task is missing or not in from_status.
-// NULL mutation arguments leave the column unchanged. available_at uses the database clock
-// (ADR-021).
+// NULL mutation arguments leave the column unchanged. available_at is the given instant when
+// set (the retry handler's injected clock, 03.04), else now() + retry_delay_ms on the database
+// clock (ADR-021).
 func (q *Queries) TransitionTask(ctx context.Context, arg TransitionTaskParams) (WorkflowTask, error) {
 	row := q.db.QueryRow(ctx, transitionTask,
 		arg.ToStatus,
 		arg.Input,
 		arg.Result,
 		arg.AttemptIncrement,
+		arg.AvailableAt,
 		arg.RetryDelayMs,
 		arg.ID,
 		arg.FromStatus,

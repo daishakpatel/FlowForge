@@ -77,6 +77,9 @@ func (r *TaskRepo) Transition(ctx context.Context, tx pgx.Tx, p persistence.Task
 	if m.RetryDelay != nil {
 		args.RetryDelayMs = pgtype.Int8{Int64: m.RetryDelay.Milliseconds(), Valid: true}
 	}
+	if m.AvailableAt != nil {
+		args.AvailableAt = timestamptz(*m.AvailableAt)
+	}
 	row, err := sqlcgen.New(tx).TransitionTask(ctx, args)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return r.explainMiss(ctx, tx, p)

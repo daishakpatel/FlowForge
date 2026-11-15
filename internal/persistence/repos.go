@@ -189,7 +189,11 @@ type TaskMutation struct {
 	Input            json.RawMessage // resolved input (READY → QUEUED)
 	Result           json.RawMessage
 	IncrementAttempt bool           // attempt_count++ (QUEUED → RUNNING)
-	RetryDelay       *time.Duration // available_at = DB now() + delay (ADR-021)
+	RetryDelay       *time.Duration // available_at = DB now() + delay (ADR-021); also the event's retry_delay_ms
+	// AvailableAt sets available_at to this instant, overriding RetryDelay's database-clock time.
+	// The retry handler passes clock.Now() + delay so promotion and claiming, which compare
+	// available_at with the injected clock, use one time base (03.04).
+	AvailableAt *time.Time
 }
 
 // TaskTransitionParams is the input of TaskRepo.Transition, the only way to change a task's

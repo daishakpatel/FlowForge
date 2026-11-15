@@ -28,8 +28,9 @@ LIMIT @lim;
 
 -- name: TransitionTask :one
 -- Conditional transition (ADR-020): no row when the task is missing or not in from_status.
--- NULL mutation arguments leave the column unchanged. available_at uses the database clock
--- (ADR-021).
+-- NULL mutation arguments leave the column unchanged. available_at is the given instant when
+-- set (the retry handler's injected clock, 03.04), else now() + retry_delay_ms on the database
+-- clock (ADR-021).
 UPDATE workflow_tasks SET
   status        = @to_status::text,
   version       = version + 1,
@@ -37,7 +38,8 @@ UPDATE workflow_tasks SET
   input         = COALESCE(sqlc.narg(input)::jsonb, input),
   result        = COALESCE(sqlc.narg(result)::jsonb, result),
   attempt_count = attempt_count + @attempt_increment::int,
-  available_at  = CASE WHEN sqlc.narg(retry_delay_ms)::bigint IS NULL THEN available_at
+  available_at  = CASE WHEN sqlc.narg(available_at)::timestamptz IS NOT NULL THEN sqlc.narg(available_at)::timestamptz
+                       WHEN sqlc.narg(retry_delay_ms)::bigint IS NULL THEN available_at
                        ELSE now() + sqlc.narg(retry_delay_ms)::bigint * interval '1 millisecond' END
 WHERE id = @id AND status = @from_status::text
 RETURNING *;
