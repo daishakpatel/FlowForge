@@ -6,12 +6,12 @@ import (
 	"github.com/daishakpatel/flowforge/internal/workflow/model"
 )
 
-// runTransitions is 00E §3.3 as data. Read-only. 00E lists no move out of CREATED or PAUSED
-// other than to RUNNING, so cancelling a run in either state needs a 00E change first.
+// runTransitions is 00E §3.3 as data. Read-only. A CREATED or PAUSED run can be cancelled, and a
+// PAUSED run fails when its workflow deadline passes (pause does not stop the deadline, 03.05).
 var runTransitions = map[model.RunStatus][]model.RunStatus{
-	model.RunCreated:        {model.RunRunning},
+	model.RunCreated:        {model.RunRunning, model.RunCancelled},
 	model.RunRunning:        {model.RunSucceeded, model.RunFailed, model.RunCancelled, model.RunNeedsAttention, model.RunPaused},
-	model.RunPaused:         {model.RunRunning},
+	model.RunPaused:         {model.RunRunning, model.RunCancelled, model.RunFailed},
 	model.RunNeedsAttention: {model.RunRunning, model.RunFailed, model.RunCancelled},
 }
 

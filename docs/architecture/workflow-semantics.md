@@ -102,6 +102,9 @@ stateDiagram-v2
   CREATED --> RUNNING: first task queued
   RUNNING --> PAUSED
   PAUSED --> RUNNING
+  CREATED --> CANCELLED: cancel (03.05)
+  PAUSED --> CANCELLED: cancel (03.05)
+  PAUSED --> FAILED: workflow timeout (03.05)
   RUNNING --> SUCCEEDED
   RUNNING --> FAILED
   RUNNING --> CANCELLED
@@ -111,7 +114,7 @@ stateDiagram-v2
   NEEDS_ATTENTION --> CANCELLED
 ```
 
-`00E` §3.3 has no move from `CREATED` or `PAUSED` to `CANCELLED`, so the code doesn't allow one either; cancelling a run in those states needs a `00E` change first.
+A `CREATED` or `PAUSED` run can be cancelled, and a `PAUSED` run fails when its workflow deadline passes: pausing does not stop the deadline (03.05, [run control](run-control.md)).
 
 Each allowed transition has an event type (`00E` §7): `TaskTransitionEvent`, `AttemptTransitionEvent` and `RunTransitionEvent` return it. Creation events (`run.created`, `task.attempt.started`) aren't transitions and are emitted by the code that creates the row. `RUNNING → CANCELLED` on an attempt has no event of its own; the task's `task.cancelled` covers it.
 

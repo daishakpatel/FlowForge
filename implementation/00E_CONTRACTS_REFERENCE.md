@@ -217,7 +217,7 @@ Indexing/retention: `workflow_events`, `task_logs`, `outbox` (published) are pru
 `RUNNING → SUCCEEDED | FAILED | TIMED_OUT | ABANDONED | CANCELLED`. Terminal; completion succeeds only when `status='RUNNING' AND fencing_token = $token`.
 
 ### 3.3 Run states
-CREATED → RUNNING (first task queued) → SUCCEEDED (all tasks SUCCEEDED or SKIPPED, no non-handled failure) | FAILED (a task failed with no `on_failure` branch handling it, or workflow timeout) | CANCELLED | NEEDS_ATTENTION (an `AI_INVESTIGATION`/approval is pending or workflow policy `on_failure: needs_attention`). RUNNING ⇄ PAUSED. NEEDS_ATTENTION → RUNNING (rerun/approval executed) | FAILED | CANCELLED.
+CREATED → RUNNING (first task queued) → SUCCEEDED (all tasks SUCCEEDED or SKIPPED, no non-handled failure) | FAILED (a task failed with no `on_failure` branch handling it, or workflow timeout) | CANCELLED | NEEDS_ATTENTION (an `AI_INVESTIGATION`/approval is pending or workflow policy `on_failure: needs_attention`). RUNNING ⇄ PAUSED. NEEDS_ATTENTION → RUNNING (rerun/approval executed) | FAILED | CANCELLED. CREATED → CANCELLED and PAUSED → CANCELLED (cancel, 03.05); PAUSED → FAILED (workflow timeout while paused, 03.05).
 
 ### 3.4 `run_if` semantics
 `on_success` (all deps SUCCEEDED), `on_failure` (≥1 dep FAILED/TIMED_OUT, all deps terminal), `always` (all deps terminal), `expr` (all deps terminal and boolean expression over `tasks.<key>.status|result` evaluates true; expression grammar in task 03.06). A failed task whose failure is "handled" by at least one `on_failure`/`always` dependent does not by itself fail the run; the run result is FAILED iff some terminal-failed task has no handling dependent that SUCCEEDED.

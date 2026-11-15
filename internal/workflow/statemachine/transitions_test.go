@@ -24,9 +24,9 @@ var (
 		"RUNNING>SUCCEEDED", "RUNNING>FAILED", "RUNNING>TIMED_OUT", "RUNNING>ABANDONED", "RUNNING>CANCELLED",
 	}
 	want00ERun = []string{
-		"CREATED>RUNNING",
+		"CREATED>RUNNING", "CREATED>CANCELLED",
 		"RUNNING>SUCCEEDED", "RUNNING>FAILED", "RUNNING>CANCELLED", "RUNNING>NEEDS_ATTENTION",
-		"RUNNING>PAUSED", "PAUSED>RUNNING",
+		"RUNNING>PAUSED", "PAUSED>RUNNING", "PAUSED>CANCELLED", "PAUSED>FAILED",
 		"NEEDS_ATTENTION>RUNNING", "NEEDS_ATTENTION>FAILED", "NEEDS_ATTENTION>CANCELLED",
 	}
 )
@@ -152,7 +152,8 @@ func TestTransitionEvents(t *testing.T) {
 		{model.RunRunning, model.RunFailed, EventRunFailed},
 		{model.RunNeedsAttention, model.RunCancelled, EventRunCancelled},
 		{model.RunRunning, model.RunNeedsAttention, EventRunNeedsAttention},
-		{model.RunCreated, model.RunCancelled, ""},
+		{model.RunCreated, model.RunCancelled, EventRunCancelled}, // allowed since 03.05
+		{model.RunSucceeded, model.RunRunning, ""},                // disallowed: no event
 	} {
 		if got := RunTransitionEvent(tc.from, tc.to); got != tc.want {
 			t.Errorf("run %s → %s: event %q, want %q", tc.from, tc.to, got, tc.want)
