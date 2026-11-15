@@ -314,18 +314,85 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
         default: {$ref: '#/components/responses/Error'}
+  /api/v1/runs/{run_id}/rerun:
+    post:
+      operationId: rerunRun
+      summary: Rerun failed tasks of a FAILED or NEEDS_ATTENTION run (operator)
+      description: >-
+        Remediation (ADR-008). For each task in task_ids (FAILED, TIMED_OUT or CANCELLED; all
+        FAILED and TIMED_OUT tasks when omitted) and every descendant that did not succeed, a new
+        PENDING task row is created that supersedes the old one (supersedes_task_id); the old rows
+        are kept unchanged as history, and descendants that succeeded are kept. The run becomes
+        RUNNING again (event run.resumed with the reason and the superseded and new task ids) and
+        its workflow deadline restarts. Any other run status, a run being cancelled, a task that
+        did not fail or a descendant that has not finished is 409 INVALID_STATE, so repeating a
+        rerun that was accepted is 409; an unknown task key is 404.
+      parameters:
+        - $ref: '#/components/parameters/RunID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RerunRequest'}
+      responses:
+        '200':
+          description: The run, RUNNING, and the ids of the created task rows.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RerunResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/runs/{run_id}/retry:
+    post:
+      operationId: retryRun
+      summary: Rerun every FAILED and TIMED_OUT task of a run (operator)
+      description: >-
+        A rerun with task_ids omitted (see rerunRun); the body and its reason are optional, the
+        reason defaulting to "retry". 409 when the run has no FAILED or TIMED_OUT task.
+      parameters:
+        - $ref: '#/components/parameters/RunID'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RetryRequest'}
+      responses:
+        '200':
+          description: The run, RUNNING, and the ids of the created task rows.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RerunResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        default: {$ref: '#/components/responses/Error'}
   /api/v1/runs/{run_id}/tasks:
     get:
       operationId: listRunTasks
-      summary: Every task row of the run, including superseded ones, in insertion order
+      summary: The run's tasks in insertion order; head instances only unless include_superseded
       parameters:
         - $ref: '#/components/parameters/RunID'
+        - name: include_superseded
+          in: query
+          description: >-
+            Also return rows a rerun has superseded, so every generation of a task is listed
+            (follow supersedes_task_id). By default only the current instance of each task.
+          schema: {type: boolean, default: false}
       responses:
         '200':
-          description: All tasks (not paginated; `next_cursor` is always null).
+          description: The tasks (not paginated; `next_cursor` is always null).
           content:
             application/json:
               schema: {$ref: '#/components/schemas/TaskList'}
+        '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '429': {$ref: '#/components/responses/RateLimited'}
@@ -779,6 +846,33 @@ components:
           type: array
           items: {$ref: '#/components/schemas/Task'}
         next_cursor: {$ref: '#/components/schemas/NextCursor'}
+
+    RerunRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        task_ids:
+          description: Task keys (task_key) to rerun; omitted or empty means every FAILED and TIMED_OUT task.
+          type: array
+          maxItems: 500
+          items: {type: string}
+        reason: {type: string, minLength: 1, maxLength: 1000}
+    RetryRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        reason: {type: string, maxLength: 1000}
+    RerunResponse:
+      type: object
+      additionalProperties: false
+      required: [run, task_ids]
+      properties:
+        run: {$ref: '#/components/schemas/Run'}
+        task_ids:
+          description: Ids of the created task rows, dependencies first.
+          type: array
+          items: {type: string, pattern: '^task_'}
 
     Attempt:
       type: object

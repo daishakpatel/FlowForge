@@ -100,11 +100,12 @@ func run(ctx context.Context, opts config.Options, logOut io.Writer, listen func
 	rng := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 0))
 	txm := pg.NewTxManager(pool, clock.Real{}, rng)
 	reg := obs.NewRegistry()
+	runRepo := pg.NewRunRepo(gen, rec)
 	router, err := rest.NewRouter(rest.Deps{
 		Workflows: &service.WorkflowService{DB: pool, DefRepo: defs},
 		Runs: &service.RunService{
 			DB: pool, Tx: txm, DefRepo: defs,
-			RunRepo: pg.NewRunRepo(gen, rec), TaskRepo: pg.NewTaskRepo(rec),
+			RunRepo: runRepo, Reruns: runRepo, TaskRepo: pg.NewTaskRepo(rec),
 			AttemptRepo: pg.NewAttemptRepo(gen, rec), EventRepo: pg.EventRepo{},
 			RunControl: pg.RunControlRepo{}, Notify: pg.SchedulerRepo{}, Clock: clock.Real{}, CancelGrace: cfg.CancelGrace,
 		},

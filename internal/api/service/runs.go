@@ -36,6 +36,8 @@ type RunService struct {
 	Notify      persistence.Notifier // wakes the scheduler after cancel and resume
 	Clock       clock.Clock
 	CancelGrace time.Duration // FF_CANCEL_GRACE: how long workers get to stop RUNNING attempts
+	// Reruns creates rerun rows (task 03.06); pg.RunRepo implements it.
+	Reruns persistence.RerunRepo
 }
 
 // StartRunParams is the input of RunService.Start. Empty strings are "not set".

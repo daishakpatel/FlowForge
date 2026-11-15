@@ -18,6 +18,8 @@ func routeACL() map[string]string {
 		"POST /api/v1/runs/{run_id}/cancel":      auth.RoleOperator,
 		"POST /api/v1/runs/{run_id}/pause":       auth.RoleOperator,
 		"POST /api/v1/runs/{run_id}/resume":      auth.RoleOperator,
+		"POST /api/v1/runs/{run_id}/rerun":       auth.RoleOperator,
+		"POST /api/v1/runs/{run_id}/retry":       auth.RoleOperator,
 		"GET /api/v1/runs/{run_id}/tasks":        auth.RoleViewer,
 		"GET /api/v1/runs/{run_id}/events":       auth.RoleViewer,
 		"GET /api/v1/tasks/{task_id}":            auth.RoleViewer,

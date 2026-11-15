@@ -107,6 +107,8 @@ func NewRouter(d Deps) (chi.Router, error) {
 			r.Post("/runs/{run_id}/cancel", h.cancelRun)
 			r.Post("/runs/{run_id}/pause", h.pauseRun)
 			r.Post("/runs/{run_id}/resume", h.resumeRun)
+			r.Post("/runs/{run_id}/rerun", h.rerunRun)
+			r.Post("/runs/{run_id}/retry", h.retryRun)
 			r.Get("/runs/{run_id}/tasks", h.listRunTasks)
 			r.Get("/runs/{run_id}/events", h.listRunEvents)
 			r.Get("/tasks/{task_id}", h.getTask)

@@ -93,9 +93,10 @@ func newAPIEnv(t *testing.T) *apiEnv {
 	g := &ids.Fake{}
 	rec := events.NewRecorder(clock.Real{}, g, "flowforge-api")
 	wf := &service.WorkflowService{DB: pool, DefRepo: pg.NewDefinitionRepo(g)}
+	runRepo := pg.NewRunRepo(g, rec)
 	runs := &service.RunService{
 		DB: pool, Tx: pg.NewTxManager(pool, clock.Real{}, nil), DefRepo: pg.NewDefinitionRepo(g),
-		RunRepo: pg.NewRunRepo(g, rec), TaskRepo: pg.NewTaskRepo(rec), AttemptRepo: pg.NewAttemptRepo(g, rec),
+		RunRepo: runRepo, TaskRepo: pg.NewTaskRepo(rec), AttemptRepo: pg.NewAttemptRepo(g, rec), Reruns: runRepo,
 		EventRepo:  pg.EventRepo{},
 		RunControl: pg.RunControlRepo{}, Notify: pg.SchedulerRepo{}, Clock: clock.Real{}, CancelGrace: 30 * time.Second,
 	}
@@ -272,10 +273,14 @@ func TestContract_API(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, op := range []string{"cancel", "pause", "resume"} {
-		code, _, _ = do("POST", "/api/v1/runs/run_missing/"+op, nil)
+	for _, op := range []string{"cancel", "pause", "resume", "rerun", "retry"} {
+		var body []byte
+		if op == "rerun" {
+			body = []byte(`{"reason":"x"}`)
+		}
+		code, _, _ = do("POST", "/api/v1/runs/run_missing/"+op, body)
 		want(t, code, 404, op+" of a missing run")
-		code, _, _ = do("POST", "/api/v1/runs/"+run.ID+"/"+op, nil, e.bearer(auth.RoleViewer)...)
+		code, _, _ = do("POST", "/api/v1/runs/"+run.ID+"/"+op, body, e.bearer(auth.RoleViewer)...)
 		want(t, code, 403, op+" as viewer")
 	}
 	code, _, _ = do("POST", "/api/v1/runs/"+run.ID+"/pause", nil)
@@ -309,6 +314,7 @@ func TestContract_API(t *testing.T) {
 	moveRun(first.ID, model.RunRunning, model.RunFailed)
 	code, _, _ = do("POST", "/api/v1/runs/"+first.ID+"/cancel?force=true", nil)
 	want(t, code, 409, "cancel of a FAILED run")
+	rerunContract(t, e, do, first.ID, moveRun)
 
 	code, body, _ = do("GET", "/api/v1/runs/"+run.ID+"/tasks", nil)
 	want(t, code, 200, "run tasks")
@@ -535,5 +541,75 @@ func TestListRuns_Pagination(t *testing.T) {
 	page := decodeBody[listResponse[runResponse]](t, c.do(t, e.router, "GET", "/api/v1/runs?limit=1000", nil).Body.Bytes())
 	if len(page.Items) != total || page.NextCursor != nil {
 		t.Errorf("limit=1000 → %d items, next %v; want all %d on one page", len(page.Items), page.NextCursor, total)
+	}
+}
+
+// rerunContract produces every documented status of rerunRun, retryRun and listRunTasks' 400
+// (03.06). runID is a FAILED run whose one task, fetch, is PENDING; tasks are moved by the
+// repository, as the scheduler and workers would.
+func rerunContract(t *testing.T, e *apiEnv, do func(string, string, []byte, ...string) (int, []byte, http.Header),
+	runID string, moveRun func(string, model.RunStatus, model.RunStatus)) {
+	t.Helper()
+	failHead := func() string { // moves the head fetch row PENDING → … → FAILED
+		t.Helper()
+		heads, err := e.runs.HeadTasks(t.Context(), runID)
+		if err != nil || len(heads) != 1 {
+			t.Fatalf("heads %v, %v", heads, err)
+		}
+		path := []model.TaskStatus{model.TaskPending, model.TaskReady, model.TaskQueued, model.TaskRunning, model.TaskFailed}
+		for i := range len(path) - 1 {
+			if err := e.runs.Tx.WithTx(t.Context(), pgx.TxOptions{}, func(tx pgx.Tx) error {
+				return e.runs.TaskRepo.Transition(t.Context(), tx, persistence.TaskTransitionParams{TaskID: heads[0].ID, From: path[i], To: path[i+1]})
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return heads[0].ID
+	}
+	rerun := "/api/v1/runs/" + runID + "/rerun"
+	code, _, _ := do("POST", "/api/v1/runs/run_missing/rerun", []byte(`{"reason":"x"}`))
+	want(t, code, 404, "rerun of a missing run")
+	code, _, _ = do("POST", "/api/v1/runs/run_missing/retry", nil)
+	want(t, code, 404, "retry of a missing run")
+	code, _, _ = do("POST", rerun, []byte(`{"task_ids":["fetch"]}`))
+	want(t, code, 400, "rerun without a reason")
+	code, _, _ = do("POST", "/api/v1/runs/"+runID+"/retry", []byte(`{"bogus":1}`))
+	want(t, code, 400, "retry with an unknown field")
+	code, _, _ = do("POST", rerun, []byte(`{"task_ids":["nope"],"reason":"x"}`))
+	want(t, code, 404, "rerun of an unknown task key")
+	code, _, _ = do("POST", rerun, []byte(`{"task_ids":["fetch"],"reason":"x"}`))
+	want(t, code, 409, "rerun of a task that did not fail")
+	code, _, _ = do("POST", "/api/v1/runs/"+runID+"/retry", nil)
+	want(t, code, 409, "retry with no failed task")
+
+	old := failHead()
+	code, body, _ := do("POST", rerun, []byte(`{"task_ids":["fetch"],"reason":"bad vendor data, fixed"}`))
+	want(t, code, 200, "rerun a failed task")
+	res := decodeBody[rerunResponse](t, body)
+	if res.Run.Status != "RUNNING" || res.Run.CompletedAt != nil || len(res.TaskIDs) != 1 {
+		t.Fatalf("rerun answered %+v", res)
+	}
+	code, _, _ = do("POST", rerun, []byte(`{"task_ids":["fetch"],"reason":"bad vendor data, fixed"}`))
+	want(t, code, 409, "repeated rerun")
+
+	code, _, _ = do("GET", "/api/v1/runs/"+runID+"/tasks?include_superseded=maybe", nil)
+	want(t, code, 400, "bad include_superseded")
+	code, body, _ = do("GET", "/api/v1/runs/"+runID+"/tasks", nil)
+	want(t, code, 200, "head tasks")
+	if h := decodeBody[listResponse[taskResponse]](t, body); len(h.Items) != 1 || h.Items[0].ID != res.TaskIDs[0] || h.Items[0].SupersedesTaskID != old {
+		t.Errorf("head tasks after rerun = %+v", h.Items)
+	}
+	code, body, _ = do("GET", "/api/v1/runs/"+runID+"/tasks?include_superseded=true", nil)
+	want(t, code, 200, "task history")
+	if all := decodeBody[listResponse[taskResponse]](t, body); len(all.Items) != 2 || all.Items[0].ID != old || all.Items[0].Status != "FAILED" {
+		t.Errorf("task history = %+v", all.Items)
+	}
+
+	failHead()
+	moveRun(runID, model.RunRunning, model.RunFailed)
+	code, body, _ = do("POST", "/api/v1/runs/"+runID+"/retry", nil)
+	want(t, code, 200, "retry a failed run")
+	if r := decodeBody[rerunResponse](t, body); r.Run.Status != "RUNNING" || len(r.TaskIDs) != 1 {
+		t.Errorf("retry answered %+v", r)
 	}
 }

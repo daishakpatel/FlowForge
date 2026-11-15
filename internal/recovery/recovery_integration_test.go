@@ -21,6 +21,7 @@ import (
 	"github.com/daishakpatel/flowforge/internal/testutil"
 	"github.com/daishakpatel/flowforge/internal/workerapi"
 	"github.com/daishakpatel/flowforge/internal/workerapi/workerapitest"
+	"github.com/daishakpatel/flowforge/internal/workflow/expr"
 	"github.com/daishakpatel/flowforge/internal/workflow/model"
 )
 
@@ -236,7 +237,7 @@ func TestLoops_SurviveDatabaseOutage(t *testing.T) {
 	runner := scheduler.NewRunner(scheduler.AlwaysLeader{})
 	runner.RegisterLoop(&scheduler.DecisionLoop{
 		DB: pool, Tx: tm, Cluster: pg.ClusterRepo{}, Sched: pg.SchedulerRepo{}, Notify: pg.SchedulerRepo{},
-		Runs: srv.Runs, Tasks: srv.Tasks, Defs: srv.Defs, Inputs: scheduler.IdentityResolver{}, Clock: clock.Real{},
+		Runs: srv.Runs, Tasks: srv.Tasks, Defs: srv.Defs, Inputs: scheduler.TemplateResolver{}, Eval: expr.Evaluator{}, Clock: clock.Real{},
 		Tick: 50 * time.Millisecond, Errors: errs,
 	})
 	runner.RegisterLoop(&scheduler.TimeoutLoop{DB: pool, Tx: tm, Cluster: pg.ClusterRepo{}, Recovery: pg.RecoveryRepo{},

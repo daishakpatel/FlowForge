@@ -97,8 +97,18 @@ func toEvent(v persistence.EventView) eventResponse {
 	}
 }
 
+// listRunTasks lists the head task rows, or every generation with include_superseded=true (03.06).
 func (h *handlers) listRunTasks(w http.ResponseWriter, r *http.Request) {
-	views, err := h.runs.Tasks(r.Context(), chi.URLParam(r, "run_id"))
+	all, err := includeSuperseded(r)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	list := h.runs.HeadTasks
+	if all {
+		list = h.runs.Tasks
+	}
+	views, err := list(r.Context(), chi.URLParam(r, "run_id"))
 	if err != nil {
 		writeError(w, r, err)
 		return

@@ -23,6 +23,7 @@ import (
 	"github.com/daishakpatel/flowforge/internal/worker/runtime"
 	"github.com/daishakpatel/flowforge/internal/workerapi"
 	"github.com/daishakpatel/flowforge/internal/workerapi/workerapitest"
+	"github.com/daishakpatel/flowforge/internal/workflow/expr"
 	"github.com/daishakpatel/flowforge/internal/workflow/model"
 )
 
@@ -57,7 +58,7 @@ func newEnv(t *testing.T) *env {
 	})
 	srv.Service.Cancels = workerapi.RunCancelSource{DB: srv.Pool, Runs: pg.RunControlRepo{}} // set before any worker calls
 	e := &env{srv: srv, clock: fc, runs: &service.RunService{
-		DB: srv.Pool, Tx: srv.TM, DefRepo: srv.Defs, RunRepo: srv.Runs, TaskRepo: srv.Tasks, AttemptRepo: srv.Attempts,
+		DB: srv.Pool, Tx: srv.TM, DefRepo: srv.Defs, RunRepo: srv.Runs, Reruns: srv.Runs, TaskRepo: srv.Tasks, AttemptRepo: srv.Attempts,
 		RunControl: pg.RunControlRepo{}, Notify: pg.SchedulerRepo{}, Clock: fc, CancelGrace: cancelGrace,
 	}}
 	e.syncClock(t)
@@ -71,7 +72,7 @@ func (e *env) build() {
 	ender := workerapi.AttemptEnder{Attempts: s.Attempts, Tasks: s.Tasks, Outcomes: s.Service.Outcomes}
 	e.decide = &scheduler.DecisionLoop{
 		DB: s.Pool, Tx: s.TM, Cluster: pg.ClusterRepo{}, Sched: pg.SchedulerRepo{}, Notify: pg.SchedulerRepo{},
-		Runs: s.Runs, Tasks: s.Tasks, Defs: s.Defs, Inputs: scheduler.IdentityResolver{}, Clock: e.clock, Tick: time.Second,
+		Runs: s.Runs, Tasks: s.Tasks, Defs: s.Defs, Inputs: scheduler.TemplateResolver{}, Eval: expr.Evaluator{}, Clock: e.clock, Tick: time.Second,
 	}
 	e.timeouts = &scheduler.TimeoutLoop{
 		DB: s.Pool, Tx: s.TM, Cluster: pg.ClusterRepo{}, Recovery: pg.RecoveryRepo{}, Ender: ender,
