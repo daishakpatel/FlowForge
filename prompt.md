@@ -18,6 +18,7 @@ implement <TARGET> using prompt.md and follow rules defined in 00C_AGENT_OPERATI
 | Option | Default | Effect |
 |---|---|---|
 | `pause` | off | Stop after each task and wait for "continue" (for example, so you can commit it) |
+| `agents` | off | Allow the agent-backed skills marked † in [Skills and plugins](#skills-and-plugins): review subagents, `code-review` at `max`, and `claude-security` |
 
 ## Step 0: Build the queue
 
@@ -33,6 +34,8 @@ The tasks run **one at a time in queue order**, even pairs that `00B` §5 marks 
 ## Per-task loop
 
 Treat every task as a **cold start**. Base each decision on the files, the code and the predecessor reports, not on what you remember from the previous task in this run.
+
+At each step, invoke the skills that [Skills and plugins](#skills-and-plugins) lists for that step and for the task's kind.
 
 ### Step 1: Preflight
 
@@ -86,6 +89,69 @@ Treat every task as a **cold start**. Base each decision on the files, the code 
    - If the status is `PARTIAL` or `BLOCKED`, end the run. Leave only green work in the tree. Downstream tasks stay unstarted.
    - If the invocation says `pause`, wait for "continue".
    - Otherwise, start Step 1 for the next task in the queue.
+
+## Skills and plugins
+
+Skills supply method; `00C` and this prompt supply the rules. Invoke them with the Skill tool by their exact name.
+
+### Rules
+
+1. **`00C` wins.** Ignore any part of a skill that conflicts with `00C`. In particular, ignore instructions to:
+   - commit, push, stash, open a PR, or create a branch or worktree (`00C` §7);
+   - write plan or spec files outside the task's scope fence;
+   - stop mid-task to ask questions that the brief or a `BLOCKED` report should carry.
+2. **Invoke each skill once per run.** If a skill's instructions are already in context from earlier in the run, follow them again without re-invoking. Re-invoke only after the context has been compacted and the instructions are gone.
+3. **Use only what fits.** Invoke a skill only when the task actually has that kind of work. A skill that turns out not to apply is dropped, not forced.
+4. **† = agent-backed:** it spawns subagents or a cloud review, and costs far more. Use it only when the invocation includes `agents`, or the human asks for it. Without that, use the inline alternative listed next to it.
+5. **Record what you used.** List the skills you invoked in the report's *Agent/session identifier* line, e.g. `Claude Code (…); skills: superpowers:test-driven-development, code-review`.
+
+### By step (every task)
+
+| Step | When | Invoke |
+|---|---|---|
+| 1 Preflight | The task is Large, or §4 leaves real design choices open | `agent-skills:spec-driven-development` (settle the spec in the brief, not in new files) |
+| 2 Implement | Logic, parsers, state machines, bug fixes | `superpowers:test-driven-development` |
+| 2 Implement | A test fails unexpectedly, a test is flaky, or behavior surprises you | `superpowers:systematic-debugging`, before proposing any fix |
+| 2 Implement | Choosing between designs of similar size | `ponytail:ponytail` (smallest complete change) |
+| 3 Verify | Before claiming any suite is green or a criterion is met | `superpowers:verification-before-completion` |
+| 3 Verify | Always, on the task's diff | `code-review` at `medium`; `high` for P0 tasks and phase gates. † `max` or `ultra` |
+| 3 Verify | Go changes | `ecc:go-review`; † the `ecc:go-reviewer` agent |
+| 3 Verify | Error paths, retries, fallbacks, goroutines | † the `ecc:silent-failure-hunter` agent; inline: check them in `code-review` |
+| 3 Verify | Auth, input validation, secrets, network exposure | `security-review` |
+| 3 Verify | Acting on review findings | `superpowers:receiving-code-review` (verify each finding before changing code) |
+| 4 Document | A `00A` amendment or a proposed ADR (`00C` §2.4) | `agent-skills:documentation-and-adrs` |
+
+### By task kind
+
+| Kind | Tasks | Invoke |
+|---|---|---|
+| Tooling, CI, dev environment | 01.01–01.02 | `agent-skills:ci-cd-and-automation`, `ecc:docker-patterns` |
+| Go platform code (config, logging, clock, ids) | 01.03–01.04 | `ecc:golang-patterns`, `ecc:error-handling` |
+| Schema, migrations, SQL, repositories | 02.01, 02.03, 05.02 | `ecc:postgres-patterns`, `ecc:database-migrations`; † the `ecc:database-reviewer` agent |
+| Pure domain logic, DAGs, parsers, state machines | 02.02, 03.06, 04.03 | `ecc:golang-testing` (table, fuzz and property tests), `superpowers:test-driven-development` |
+| REST, gRPC and auth contracts | 02.04, 02.05, 03.01, 04.04, 05.09, 06.02 | `agent-skills:api-and-interface-design`, `ecc:api-design`; for auth also `agent-skills:security-and-hardening` |
+| Scheduler, workers, recovery, events | 03.02–03.08 | `ecc:golang-patterns`; `superpowers:systematic-debugging` for any race or flake |
+| Raft and coordination | 04.01–04.07 | `fullstack-dev-skills:golang-pro`, `ecc:golang-testing` |
+| Fault injection and chaos | 04.08, 09.04 | `fullstack-dev-skills:chaos-engineer` |
+| Kafka and stream processing | 05.01, 05.03–05.08 | `ecc:golang-patterns`; for backpressure and throughput, `agent-skills:performance-optimization` |
+| Python AI service | 06.01–06.05, 06.07 | `python-development:python-testing-patterns`, `python-development:async-python-patterns`, `python-development:python-type-safety`, `ecc:fastapi-patterns`. For LLM providers and prompts, `claude-api`. For retrieval (06.03), `fullstack-dev-skills:rag-architect`. Review: `ecc:python-review` |
+| Go side of AI integration | 06.06 | `agent-skills:api-and-interface-design`, `security-review` (approvals execute actions) |
+| Dashboard UI | 07.01–07.03 | `frontend-design:frontend-design`, `ecc:react-patterns`, `ecc:react-testing`, `ecc:typescript-patterns`, `ecc:frontend-a11y`. For charts, `dataviz`. For flows, `ecc:e2e-testing`, and `run` to see the change working |
+| Tracing, metrics, dashboards, alerts | 08.01–08.03 | `agent-skills:observability-and-instrumentation`, `fullstack-dev-skills:monitoring-expert` |
+| Security hardening, TLS | 09.01 | `agent-skills:security-and-hardening`, `security-review`; † `claude-security` (full scan with patches) |
+| Containers, Compose, Kubernetes | 09.02, 09.06 | `ecc:docker-patterns`, `ecc:kubernetes-patterns`, `ecc:deployment-patterns` |
+| Load tests and benchmarks | 09.03 | `ecc:benchmark`, `agent-skills:performance-optimization` |
+| Documentation and runbooks | 09.05 | `agent-skills:documentation-and-adrs` |
+| Phase gates and release | 03.09, 04.08, 05.10, 06.07, 07.03, 10.01 | `superpowers:verification-before-completion`, `ecc:e2e-testing`, `code-review` at `high`, `security-review`; † `code-review` `ultra` and `claude-security` at 10.01 |
+
+### Not for this runner
+
+- `loop` and `schedule`.
+- The artifact and doc-publishing skills.
+- The domain packs: healthcare, Laravel, Django, Spring Boot and similar.
+- The orchestration suites that run their own multi-agent flows: `ecc:orch-*`, `ecc:multi-*`, `ecc:gan-*`, `ecc:santa-loop`, `superpowers:subagent-driven-development`.
+
+They don't fit one-task-at-a-time work under `00C`, so use them only when the human asks for them by name.
 
 ## Run summary
 
