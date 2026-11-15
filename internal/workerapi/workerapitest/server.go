@@ -40,6 +40,12 @@ type Options struct {
 	HeartbeatInterval time.Duration          // returned by Register; 200 ms
 	LeaseTTL          time.Duration          // 15 s
 	Cancels           workerapi.CancelSource // NoCancels
+	// Clock is the API's clock (claims, leases, heartbeats); clock.Real by default. Recovery
+	// tests share one clock.Fake between the API and the scheduler loops.
+	Clock clock.Clock
+	// Outcomes builds the OutcomeHandler from the server's repositories; TerminalOutcomeHandler
+	// by default (03.01). Recovery tests pass the 03.04 RetryOutcomeHandler.
+	Outcomes func(*Server) workerapi.OutcomeHandler
 }
 
 // Server is a running WorkerService plus the repositories to set up and inspect its database.
@@ -50,6 +56,8 @@ type Server struct {
 	Tasks    *pg.TaskRepo
 	Attempts *pg.AttemptRepo
 	Defs     *pg.DefinitionRepo
+	Recorder *events.Recorder
+	Clock    clock.Clock
 	Service  *workerapi.Service
 	Addr     string // host:port, stable across Restart
 	Token    string // an API key with role worker
@@ -73,11 +81,16 @@ func Start(t testing.TB, o Options) *Server {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
+	c := o.Clock
+	if c == nil {
+		c = clock.Real{}
+	}
 	gen := ids.NewGenerator(clock.Real{}, crand.Reader)
 	rec := events.NewRecorder(clock.Real{}, gen, "workerapitest")
 	s := &Server{
 		Pool: pool, TM: pg.NewTxManager(pool, clock.Real{}, nil), Runs: pg.NewRunRepo(gen, rec),
 		Tasks: pg.NewTaskRepo(rec), Attempts: pg.NewAttemptRepo(gen, rec), Defs: pg.NewDefinitionRepo(gen),
+		Recorder: rec, Clock: c,
 	}
 	s.Token = s.key(t, auth.RoleWorker)
 
@@ -97,11 +110,15 @@ func Start(t testing.TB, o Options) *Server {
 		cancels = workerapi.NoCancels{}
 	}
 	ttl := orDefault(o.LeaseTTL, 15*time.Second)
+	var outcomes workerapi.OutcomeHandler = workerapi.TerminalOutcomeHandler{Tasks: s.Tasks}
+	if o.Outcomes != nil {
+		outcomes = o.Outcomes(s)
+	}
 	s.Service = &workerapi.Service{
 		DB: pool, Tx: s.TM, Tasks: s.Tasks, Attempts: s.Attempts, Workers: pg.WorkerRepo{}, Logs: pg.TaskLogRepo{},
-		Outcomes: workerapi.TerminalOutcomeHandler{Tasks: s.Tasks}, Cancels: cancels,
-		Leases: &workerapi.PGLeaseProvider{DB: pool, Workers: pg.WorkerRepo{}, Clock: clock.Real{}, TTL: ttl},
-		Waker:  waker, Wake: pg.SchedulerRepo{}, Clock: clock.Real{}, LeaseTTL: ttl,
+		Outcomes: outcomes, Cancels: cancels,
+		Leases: &workerapi.PGLeaseProvider{DB: pool, Workers: pg.WorkerRepo{}, Clock: c, TTL: ttl},
+		Waker:  waker, Wake: pg.SchedulerRepo{}, Clock: c, LeaseTTL: ttl,
 		HeartbeatInterval: orDefault(o.HeartbeatInterval, 200*time.Millisecond), StaleRejections: stale.WithLabelValues(),
 	}
 	if s.ic, err = workerapi.NewInterceptors(reg, auth.NewKeyAuthenticator(pool, pg.APIKeyRepo{}, clock.Real{}), gen,

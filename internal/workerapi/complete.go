@@ -11,6 +11,7 @@ import (
 	workerv1 "github.com/daishakpatel/flowforge/internal/gen/proto/worker/v1"
 	"github.com/daishakpatel/flowforge/internal/logging"
 	"github.com/daishakpatel/flowforge/internal/persistence"
+	"github.com/daishakpatel/flowforge/internal/testutil/failpoint"
 	"github.com/daishakpatel/flowforge/internal/workflow/model"
 )
 
@@ -92,6 +93,9 @@ func (s *Service) finish(ctx context.Context, attemptID string, token int64, r r
 		}
 		t, err := s.Tasks.Get(ctx, tx, a.TaskID)
 		if err != nil {
+			return err
+		}
+		if err := failpoint.Inject(failpoint.OutcomeAfterAttemptEnded); err != nil {
 			return err
 		}
 		if err := s.Outcomes.OnAttemptFinished(ctx, tx, AttemptOutcome{

@@ -11,6 +11,7 @@ import (
 	"github.com/daishakpatel/flowforge/internal/apperrors"
 	workerv1 "github.com/daishakpatel/flowforge/internal/gen/proto/worker/v1"
 	"github.com/daishakpatel/flowforge/internal/persistence"
+	"github.com/daishakpatel/flowforge/internal/testutil/failpoint"
 	"github.com/daishakpatel/flowforge/internal/workflow/model"
 )
 
@@ -87,6 +88,9 @@ func (s *Service) claim(ctx context.Context, w persistence.WorkerView, free int)
 				Mutate: func(m *persistence.TaskMutation) { m.IncrementAttempt = true },
 			})
 			if err != nil {
+				return err
+			}
+			if err := failpoint.Inject(failpoint.ClaimAfterTaskRunning); err != nil {
 				return err
 			}
 			a, err := s.Attempts.Create(ctx, tx, persistence.NewAttempt{

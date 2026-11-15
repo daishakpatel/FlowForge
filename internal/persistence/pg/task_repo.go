@@ -12,6 +12,7 @@ import (
 	"github.com/daishakpatel/flowforge/internal/events"
 	"github.com/daishakpatel/flowforge/internal/persistence"
 	"github.com/daishakpatel/flowforge/internal/persistence/sqlcgen"
+	"github.com/daishakpatel/flowforge/internal/testutil/failpoint"
 	"github.com/daishakpatel/flowforge/internal/workflow/model"
 	"github.com/daishakpatel/flowforge/internal/workflow/statemachine"
 )
@@ -86,6 +87,9 @@ func (r *TaskRepo) Transition(ctx context.Context, tx pgx.Tx, p persistence.Task
 	}
 	if err != nil {
 		return fmt.Errorf("transition task %s: %w", p.TaskID, err)
+	}
+	if err := failpoint.Inject(failpoint.TaskAfterUpdate); err != nil {
+		return err
 	}
 	ev := events.NewTaskEvent(statemachine.TaskTransitionEvent(p.From, p.To), events.TaskPayload{
 		RunID: row.RunID, TaskID: row.ID, TaskKey: row.TaskKey, Status: p.To, PreviousStatus: p.From,

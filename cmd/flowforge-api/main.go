@@ -213,7 +213,7 @@ func newWorkerServer(reg *obs.Registry, authn auth.Authenticator, gen ids.Genera
 	tasks := pg.NewTaskRepo(rec)
 	svc := &workerapi.Service{
 		DB: pool, Tx: txm, Tasks: tasks, Attempts: pg.NewAttemptRepo(gen, rec), Workers: pg.WorkerRepo{},
-		Logs: pg.TaskLogRepo{}, Outcomes: workerapi.TerminalOutcomeHandler{Tasks: tasks}, Cancels: workerapi.NoCancels{},
+		Logs: pg.TaskLogRepo{}, Outcomes: retryHandler(tasks, gen, rec), Cancels: workerapi.NoCancels{},
 		Leases: &workerapi.PGLeaseProvider{DB: pool, Workers: pg.WorkerRepo{}, Clock: clock.Real{}, TTL: cfg.WorkerLeaseTTL},
 		Waker:  waker, Wake: pg.SchedulerRepo{}, Clock: clock.Real{}, LeaseTTL: cfg.WorkerLeaseTTL, HeartbeatInterval: cfg.WorkerHeartbeat,
 		StaleRejections: stale.WithLabelValues(),
@@ -224,6 +224,14 @@ func newWorkerServer(reg *obs.Registry, authn auth.Authenticator, gen ids.Genera
 	)
 	workerv1.RegisterWorkerServiceServer(srv, svc)
 	return srv, waker, nil
+}
+
+// retryHandler is the default OutcomeHandler from 03.04: retries per the task's retry_policy,
+// with its own jitter source.
+func retryHandler(tasks *pg.TaskRepo, gen ids.Generator, rec *events.Recorder) *workerapi.RetryOutcomeHandler {
+	//nolint:gosec // G404: retry jitter needs no cryptographic randomness
+	rng := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 1))
+	return workerapi.NewRetryOutcomeHandler(tasks, pg.NewRunRepo(gen, rec), clock.Real{}, rng)
 }
 
 // maxGRPCMessage caps worker messages (task 03.01 §5).
