@@ -163,6 +163,20 @@ type RecoveryRepo interface {
 	MarkWorkerLost(ctx context.Context, q Querier, workerID string, before time.Time) (bool, error)
 }
 
+// RunControlRepo holds run cancellation and deadline reads (task 03.05). Status still changes
+// only through RunRepo.Transition and TaskRepo.Transition (ADR-020).
+type RunControlRepo interface {
+	// RequestCancel marks a CREATED, RUNNING, PAUSED or NEEDS_ATTENTION run cancel-requested and
+	// pulls its deadline in to forceAt at the latest; INVALID_STATE for any other status,
+	// NOT_FOUND for no run.
+	RequestCancel(ctx context.Context, q Querier, runID string, forceAt time.Time) (RunView, error)
+	// CancelRequestedAttempts returns the given attempt ids that are RUNNING in a cancel-requested
+	// run.
+	CancelRequestedAttempts(ctx context.Context, q Querier, attemptIDs []string) ([]string, error)
+	// OverdueRuns returns up to limit RUNNING or PAUSED runs with deadline_at <= now.
+	OverdueRuns(ctx context.Context, q Querier, now time.Time, limit int) ([]string, error)
+}
+
 // NewDefinition is the input of DefinitionRepo.Create.
 type NewDefinition struct {
 	Name       string
@@ -196,6 +210,7 @@ type RunTransitionParams struct {
 	From, To    model.RunStatus
 	Version     int64
 	LeaderEpoch *int64        // stamped into leader_epoch when set
+	DeadlineAt  *time.Time    // sets deadline_at when set: the workflow deadline, at start (03.05)
 	Event       *events.Event // replaces the default event derived from (From, To)
 }
 

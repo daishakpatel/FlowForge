@@ -83,7 +83,8 @@ func (q *Queries) CountQueuedTasksByQueue(ctx context.Context) ([]CountQueuedTas
 const listActiveRunIDs = `-- name: ListActiveRunIDs :many
 
 SELECT id FROM workflow_runs
-WHERE status IN ('CREATED', 'RUNNING') AND id > $1::text
+WHERE (status IN ('CREATED', 'RUNNING') OR (cancel_requested AND status IN ('PAUSED', 'NEEDS_ATTENTION')))
+  AND id > $1::text
 ORDER BY id
 LIMIT $2
 `
@@ -95,10 +96,11 @@ type ListActiveRunIDsParams struct {
 
 // Scheduler reads (task 03.02, ADR-004). Status changes go through TransitionRun and
 // TransitionTask only (ADR-020); nothing here writes a row.
-// One page of the scheduler's round-robin over the runs it drives: CREATED or RUNNING runs with
-// an id after after_id, in id order. The caller wraps to after_id = ” when a page comes back
-// short, so every active run is visited even when more than lim are active (fairness). Run ids
-// are ULIDs, so id order is creation order. ix_runs_status_created narrows to the two statuses.
+// One page of the scheduler's round-robin over the runs it drives: CREATED or RUNNING runs, and
+// PAUSED or NEEDS_ATTENTION runs with a cancel request (03.05), with an id after after_id, in
+// id order. The caller wraps to after_id = ” when a page comes back short, so every active run
+// is visited even when more than lim are active (fairness). Run ids are ULIDs, so id order is
+// creation order. ix_runs_status_created narrows to the statuses.
 func (q *Queries) ListActiveRunIDs(ctx context.Context, arg ListActiveRunIDsParams) ([]string, error) {
 	rows, err := q.db.Query(ctx, listActiveRunIDs, arg.AfterID, arg.Lim)
 	if err != nil {

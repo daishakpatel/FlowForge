@@ -162,8 +162,12 @@ func (r *RunRepo) Transition(ctx context.Context, tx pgx.Tx, p persistence.RunTr
 	if p.LeaderEpoch != nil {
 		epoch = pgtype.Int8{Int64: *p.LeaderEpoch, Valid: true}
 	}
+	var deadline pgtype.Timestamptz
+	if p.DeadlineAt != nil {
+		deadline = timestamptz(*p.DeadlineAt)
+	}
 	row, err := sqlcgen.New(tx).TransitionRun(ctx, sqlcgen.TransitionRunParams{
-		ToStatus: string(p.To), Terminal: statemachine.IsTerminalRun(p.To), LeaderEpoch: epoch,
+		ToStatus: string(p.To), Terminal: statemachine.IsTerminalRun(p.To), LeaderEpoch: epoch, DeadlineAt: deadline,
 		ID: p.RunID, FromStatus: string(p.From), Version: p.Version,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {

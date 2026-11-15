@@ -32,6 +32,7 @@ type RunPayload struct {
 	Status         model.RunStatus `json:"status"`
 	PreviousStatus model.RunStatus `json:"previous_status,omitempty"`
 	TaskCount      int             `json:"task_count,omitempty"` // run.created only
+	Reason         string          `json:"reason,omitempty"`     // run.failed: WORKFLOW_TIMEOUT when the workflow deadline passed (03.05)
 }
 
 // TaskPayload is the payload of task.* events other than task.attempt.*.
