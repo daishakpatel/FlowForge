@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -59,8 +60,15 @@ func (l *DecisionLoop) processRun(ctx context.Context, tx pgx.Tx, runID string, 
 	if err != nil {
 		return result{}, err
 	}
+	if run.CancelRequested && !statemachine.IsTerminalRun(run.Status) {
+		rows, err := l.Sched.HeadTasks(ctx, tx, run.ID, maxTasksPerRun)
+		if err != nil {
+			return result{}, err
+		}
+		return newDecision(l, tx, epoch, run, nil, rows).cancelRun(ctx)
+	}
 	if run.Status == model.RunPaused {
-		return result{}, nil // seam for 03.05: a paused run gets no promotions and keeps its status
+		return result{}, nil // paused (03.05): no promotions, no requeued retries, status kept
 	}
 	if run.Status != model.RunCreated && run.Status != model.RunRunning {
 		return result{}, nil // finished, or awaiting attention, since it was listed
@@ -73,12 +81,7 @@ func (l *DecisionLoop) processRun(ctx context.Context, tx pgx.Tx, runID string, 
 	if err != nil {
 		return result{}, err
 	}
-	d := &decision{l: l, tx: tx, epoch: epoch, run: run, def: def, byKey: make(map[string]*persistence.TaskView, len(rows))}
-	d.res.tasks = map[model.TaskStatus]int{}
-	for i := range rows {
-		d.heads = append(d.heads, &rows[i])
-		d.byKey[rows[i].Key] = &rows[i]
-	}
+	d := newDecision(l, tx, epoch, run, def, rows)
 	for _, step := range []func(context.Context) (bool, error){d.start, d.evaluate, d.checkpoint, d.promote, d.finish} {
 		if ok, err := step(ctx); err != nil || !ok {
 			return d.res, err
@@ -97,12 +100,27 @@ func (d *decision) checkpoint(context.Context) (bool, error) {
 	return true, failpoint.Inject(failpoint.ProcessRunMidway)
 }
 
+func newDecision(l *DecisionLoop, tx pgx.Tx, epoch int64, run persistence.RunView, def *model.Definition, rows []persistence.TaskView) *decision {
+	d := &decision{l: l, tx: tx, epoch: epoch, run: run, def: def, byKey: make(map[string]*persistence.TaskView, len(rows))}
+	d.res.tasks = map[model.TaskStatus]int{}
+	for i := range rows {
+		d.heads = append(d.heads, &rows[i])
+		d.byKey[rows[i].Key] = &rows[i]
+	}
+	return d
+}
+
 // start moves a CREATED run to RUNNING. It returns false when another decision got there first.
 func (d *decision) start(ctx context.Context) (bool, error) {
 	if d.run.Status != model.RunCreated {
 		return true, nil
 	}
-	moved, err := d.moveRun(ctx, model.RunRunning)
+	var deadline *time.Time // the workflow deadline runs from the start (03.05), on the injected clock
+	if d.def.TimeoutSeconds > 0 {
+		at := d.l.Clock.Now().Add(time.Duration(d.def.TimeoutSeconds) * time.Second)
+		deadline = &at
+	}
+	moved, err := d.moveRun(ctx, model.RunRunning, deadline)
 	d.res.started = moved
 	return moved, err
 }
@@ -203,7 +221,7 @@ func (d *decision) finish(ctx context.Context) (bool, error) {
 	if status == model.RunRunning {
 		return true, nil
 	}
-	moved, err := d.moveRun(ctx, status)
+	moved, err := d.moveRun(ctx, status, nil)
 	if moved {
 		d.res.completed = status
 		if d.run.StartedAt != nil {
@@ -242,9 +260,9 @@ func (d *decision) moveTask(ctx context.Context, t *persistence.TaskView, to mod
 
 // moveRun runs one run transition from the locked status and version, stamping the epoch.
 // INVALID_STATE and CONFLICT are benign and reported as false.
-func (d *decision) moveRun(ctx context.Context, to model.RunStatus) (bool, error) {
+func (d *decision) moveRun(ctx context.Context, to model.RunStatus, deadline *time.Time) (bool, error) {
 	err := d.l.Runs.Transition(ctx, d.tx, persistence.RunTransitionParams{
-		RunID: d.run.ID, From: d.run.Status, To: to, Version: d.run.Version, LeaderEpoch: &d.epoch,
+		RunID: d.run.ID, From: d.run.Status, To: to, Version: d.run.Version, LeaderEpoch: &d.epoch, DeadlineAt: deadline,
 	})
 	switch apperrors.CodeOf(err) {
 	case apperrors.CodeInvalidState, apperrors.CodeConflict:

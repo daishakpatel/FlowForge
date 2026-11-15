@@ -16,6 +16,7 @@ import (
 	"github.com/daishakpatel/flowforge/internal/obs"
 	"github.com/daishakpatel/flowforge/internal/persistence"
 	"github.com/daishakpatel/flowforge/internal/testutil"
+	"github.com/daishakpatel/flowforge/internal/workerapi"
 	"github.com/daishakpatel/flowforge/internal/workflow/model"
 )
 
@@ -321,5 +322,81 @@ func TestRunTicking_BacksOffAndRecovers(t *testing.T) {
 	}
 	if calls.Load() != 4 || promtest.ToFloat64(errs.WithLabelValues("test")) != 2 {
 		t.Fatalf("calls %d, errors %v", calls.Load(), promtest.ToFloat64(errs.WithLabelValues("test")))
+	}
+}
+
+// TestProcessRun_CancelRequested: tasks that have not started are cancelled at once; a RUNNING
+// task holds the run until it ends; then the run is CANCELLED, from RUNNING or PAUSED (03.05).
+func TestProcessRun_CancelRequested(t *testing.T) {
+	t.Parallel()
+	s, l := newFakeLoop(t)
+	run := s.addRun(diamond)
+	tickOK(t, l)
+	s.task(run + "_a").Status = model.TaskRunning
+	s.runs[run].CancelRequested = true
+	tickOK(t, l)
+	for _, k := range []string{"b", "c", "d"} {
+		if st := s.status(run, k); st != model.TaskCancelled {
+			t.Errorf("%s is %s, want CANCELLED", k, st)
+		}
+	}
+	if s.runStatus(run) != model.RunRunning {
+		t.Fatalf("run %s while a task still runs, want RUNNING", s.runStatus(run))
+	}
+	s.task(run + "_a").Status = model.TaskCancelled // the worker stopped it
+	tickOK(t, l)
+	if s.runStatus(run) != model.RunCancelled || s.count("run.cancelled") != 1 {
+		t.Fatalf("run %s, %d run.cancelled", s.runStatus(run), s.count("run.cancelled"))
+	}
+
+	paused := s.addRun(diamond)
+	s.runs[paused].Status, s.runs[paused].CancelRequested = model.RunPaused, true
+	created := s.addRun(diamond)
+	s.runs[created].CancelRequested = true
+	for _, id := range []string{paused, created} {
+		if _, err := l.runOnce(t.Context(), id, 0); err != nil {
+			t.Fatal(err)
+		}
+		if s.runStatus(id) != model.RunCancelled {
+			t.Errorf("cancel-requested run %s, want CANCELLED", s.runStatus(id))
+		}
+	}
+}
+
+// TestTimeoutLoop_EndsOverdueRuns: the start sets the workflow deadline; once it passes the run's
+// unfinished tasks are CANCELLED and the run FAILED with reason WORKFLOW_TIMEOUT, or CANCELLED
+// when a cancel was requested (its grace ran out).
+func TestTimeoutLoop_EndsOverdueRuns(t *testing.T) {
+	t.Parallel()
+	s, l := newFakeLoop(t)
+	fc := l.Clock.(*clock.Fake)
+	run := s.addRun(`{"name":"to","version":1,"timeout_seconds":5,"tasks":[{"id":"a","type":"t"},{"id":"b","type":"t","depends_on":["a"]}]}`)
+	cancelled := s.addRun(diamond)
+	tickOK(t, l)
+	if d := s.runs[run].DeadlineAt; d == nil || !d.Equal(fc.Now().Add(5*time.Second)) {
+		t.Fatalf("deadline %v, want start + 5s", d)
+	}
+	past := fc.Now().Add(-time.Second)
+	s.runs[cancelled].CancelRequested, s.runs[cancelled].DeadlineAt = true, &past
+	tl := &TimeoutLoop{
+		Tx: memTx{}, Cluster: memCluster{s}, Recovery: memRecovery{}, Notify: memSched{s},
+		Ender: workerapi.AttemptEnder{Tasks: memTasks{s: s}}, Runs: memRuns{s: s}, Sched: memSched{s},
+		RunControl: memRunControl{s: s}, Clock: fc, Tick: time.Second,
+	}
+	if err := tl.Once(t.Context(), AlwaysLeader{}); err != nil {
+		t.Fatal(err)
+	}
+	if s.runStatus(run) != model.RunRunning || s.runStatus(cancelled) != model.RunCancelled {
+		t.Fatalf("before the deadline: run %s; cancel-requested run past its grace %s", s.runStatus(run), s.runStatus(cancelled))
+	}
+	fc.Advance(5 * time.Second)
+	if err := tl.Once(t.Context(), AlwaysLeader{}); err != nil {
+		t.Fatal(err)
+	}
+	if s.runStatus(run) != model.RunFailed || s.status(run, "a") != model.TaskCancelled || s.status(run, "b") != model.TaskCancelled {
+		t.Fatalf("after the deadline: run %s, a %s, b %s", s.runStatus(run), s.status(run, "a"), s.status(run, "b"))
+	}
+	if s.count("run.failed "+run) != 1 {
+		t.Errorf("want one run.failed event for %s", run)
 	}
 }

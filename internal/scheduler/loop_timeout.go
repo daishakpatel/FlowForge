@@ -36,9 +36,14 @@ type TimeoutLoop struct {
 	Recovery persistence.RecoveryRepo
 	Ender    workerapi.AttemptEnder
 	Notify   persistence.Notifier
-	Clock    clock.Clock
-	Tick     time.Duration          // 1 s
-	Errors   *prometheus.CounterVec // flowforge_loop_errors_total; optional
+	// Runs, Sched and RunControl enforce run deadlines (03.05): the workflow timeout and the
+	// end of a cancel's grace. With RunControl nil, only attempt deadlines are enforced.
+	Runs       persistence.RunRepo
+	Sched      persistence.SchedulerRepo
+	RunControl persistence.RunControlRepo
+	Clock      clock.Clock
+	Tick       time.Duration          // 1 s
+	Errors     *prometheus.CounterVec // flowforge_loop_errors_total; optional
 }
 
 var _ Loop = (*TimeoutLoop)(nil)
@@ -82,6 +87,47 @@ func (l *TimeoutLoop) Once(ctx context.Context, gate Gate) error {
 			return err
 		case err != nil && ctx.Err() == nil:
 			logging.FromContext(ctx).ErrorContext(ctx, "time out attempt", "attempt_id", a.ID, "task_id", a.TaskID, logging.Err(err))
+			if l.Errors != nil {
+				l.Errors.WithLabelValues(l.Name()).Inc()
+			}
+		}
+	}
+	return l.endOverdueRuns(ctx, gate)
+}
+
+// endOverdueRuns ends the runs whose deadline has passed: a workflow timeout, or a cancel whose
+// grace ran out (03.05). Each run is its own transaction asserting the epoch.
+func (l *TimeoutLoop) endOverdueRuns(ctx context.Context, gate Gate) error {
+	if l.RunControl == nil {
+		return nil
+	}
+	ids, err := l.RunControl.OverdueRuns(ctx, l.DB, l.Clock.Now(), timeoutBatch)
+	if err != nil {
+		return fmt.Errorf("list overdue runs: %w", err)
+	}
+	done := gate.Done()
+	for _, id := range ids {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-done:
+			return nil
+		default:
+		}
+		err := l.Tx.WithTx(ctx, pgx.TxOptions{}, func(tx pgx.Tx) error {
+			if err := l.Cluster.AssertEpoch(ctx, tx, gate.Epoch()); err != nil {
+				return err
+			}
+			if err := l.endOverdueRun(ctx, tx, id, gate.Epoch()); err != nil {
+				return err
+			}
+			return l.Notify.Notify(ctx, tx, persistence.SchedulerWakeChannel)
+		})
+		switch {
+		case errors.Is(err, persistence.ErrStaleEpoch):
+			return err
+		case err != nil && ctx.Err() == nil:
+			logging.FromContext(ctx).ErrorContext(ctx, "end overdue run", "run_id", id, logging.Err(err))
 			if l.Errors != nil {
 				l.Errors.WithLabelValues(l.Name()).Inc()
 			}

@@ -238,11 +238,18 @@ func (m memRuns) Transition(_ context.Context, _ pgx.Tx, p persistence.RunTransi
 		return apperrors.Conflict("run changed")
 	}
 	r.Status, r.Version, r.LeaderEpoch = p.To, r.Version+1, p.LeaderEpoch
+	if p.DeadlineAt != nil {
+		r.DeadlineAt = p.DeadlineAt
+	}
 	if p.To == model.RunRunning && r.StartedAt == nil {
 		started := time.Date(2026, 11, 14, 0, 0, 0, 0, time.UTC)
 		r.StartedAt = &started
 	}
-	m.s.events = append(m.s.events, fmt.Sprintf("%s %s", statemachine.RunTransitionEvent(p.From, p.To), r.ID))
+	ev := statemachine.RunTransitionEvent(p.From, p.To)
+	if p.Event != nil {
+		ev = p.Event.Type
+	}
+	m.s.events = append(m.s.events, fmt.Sprintf("%s %s", ev, r.ID))
 	return nil
 }
 
@@ -293,4 +300,30 @@ func (m memDefs) Get(_ context.Context, _ persistence.Querier, id string) (persi
 		return persistence.DefinitionView{}, apperrors.NotFound("definition")
 	}
 	return d, nil
+}
+
+// memRunControl implements RunControlRepo.OverdueRuns; the rest panics.
+type memRunControl struct {
+	persistence.RunControlRepo
+	s *memStore
+}
+
+func (m memRunControl) OverdueRuns(_ context.Context, _ persistence.Querier, now time.Time, _ int) ([]string, error) {
+	m.s.mu.Lock()
+	defer m.s.mu.Unlock()
+	var ids []string
+	for id, r := range m.s.runs {
+		if (r.Status == model.RunRunning || r.Status == model.RunPaused) && r.DeadlineAt != nil && !r.DeadlineAt.After(now) {
+			ids = append(ids, id)
+		}
+	}
+	slices.Sort(ids)
+	return ids, nil
+}
+
+// memRecovery has no overdue attempts.
+type memRecovery struct{ persistence.RecoveryRepo }
+
+func (memRecovery) OverdueAttempts(context.Context, persistence.Querier, time.Time, int) ([]persistence.AttemptView, error) {
+	return nil, nil
 }

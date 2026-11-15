@@ -109,6 +109,7 @@ func run(ctx context.Context, opts config.Options, logOut io.Writer, listen func
 	runner.RegisterLoop(&scheduler.TimeoutLoop{
 		DB: pool, Tx: txm, Cluster: pg.ClusterRepo{}, Recovery: pg.RecoveryRepo{}, Ender: ender,
 		Notify: pg.SchedulerRepo{}, Clock: clock.Real{}, Tick: time.Second, Errors: loopErrors,
+		Runs: runs, Sched: pg.SchedulerRepo{}, RunControl: pg.RunControlRepo{},
 	})
 	runner.RegisterLoop(&recovery.Loop{
 		DB: pool, Tx: txm, Cluster: pg.ClusterRepo{}, Recovery: pg.RecoveryRepo{},
