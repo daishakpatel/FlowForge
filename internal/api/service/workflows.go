@@ -11,6 +11,7 @@ import (
 	"github.com/daishakpatel/flowforge/internal/apperrors"
 	"github.com/daishakpatel/flowforge/internal/dag"
 	"github.com/daishakpatel/flowforge/internal/persistence"
+	"github.com/daishakpatel/flowforge/internal/workflow/expr"
 	"github.com/daishakpatel/flowforge/internal/workflow/model"
 )
 
@@ -38,7 +39,8 @@ func (s *WorkflowService) Create(ctx context.Context, raw []byte, actor string) 
 			return persistence.DefinitionView{}, err
 		}
 	}
-	if issues := dag.Validate(def); len(issues) > 0 {
+	// run_if expressions are checked with the expression grammar (task 03.06).
+	if issues := (dag.Validator{ValidateExpr: expr.Validate, Refs: expr.Refs}).Validate(def); len(issues) > 0 {
 		details := make([]apperrors.Detail, len(issues))
 		for i, is := range issues {
 			details[i] = apperrors.Detail{Code: string(is.Code), TaskID: is.TaskID, Message: is.Message}

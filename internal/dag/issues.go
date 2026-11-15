@@ -27,13 +27,16 @@ const (
 	CodeInvalidRunIf         IssueCode = "INVALID_RUN_IF"
 	CodeEmptyExpression      IssueCode = "EMPTY_EXPRESSION"
 	CodeInvalidWorkflowField IssueCode = "INVALID_WORKFLOW_FIELD"
+	// CodeInvalidReference: a ${…} placeholder in config or a run_if_expr path that does not
+	// parse, or names a task that is unknown or not an ancestor (task 03.06).
+	CodeInvalidReference IssueCode = "INVALID_REFERENCE"
 )
 
 // IssueCodes lists every issue code.
 func IssueCodes() []IssueCode {
 	return []IssueCode{CodeDuplicateTaskID, CodeInvalidTaskID, CodeUnknownDependency, CodeSelfDependency,
 		CodeCycle, CodeTooManyTasks, CodeInvalidRetry, CodeInvalidTimeout, CodeMissingType, CodeInvalidQueue,
-		CodeInvalidRunIf, CodeEmptyExpression, CodeInvalidWorkflowField}
+		CodeInvalidRunIf, CodeEmptyExpression, CodeInvalidWorkflowField, CodeInvalidReference}
 }
 
 // ValidationIssue is one problem in a definition. TaskID is empty for workflow-level issues.

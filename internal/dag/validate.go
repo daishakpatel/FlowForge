@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/daishakpatel/flowforge/internal/workflow/model"
+	"github.com/daishakpatel/flowforge/internal/workflow/template"
 )
 
 // Definition limits (00E §3.5 and task 02.02).
@@ -28,15 +29,15 @@ var (
 )
 
 // ExprValidator checks the syntax of a run_if expression; it returns nil when the expression is
-// valid. Task 03.06 provides one for its expression grammar.
+// valid. Task 03.06 provides one for its expression grammar (expr.Validate).
 type ExprValidator func(expr string) error
 
 // ExprRefs returns the task IDs a run_if expression refers to.
 type ExprRefs func(expr string) []string
 
 // Validator validates definitions. Its zero value checks everything except expression syntax;
-// task 03.06 sets ValidateExpr (and, if its grammar needs it, Refs). Validator holds no state,
-// so it is safe for concurrent use.
+// the API sets ValidateExpr and Refs from internal/workflow/expr (task 03.06). Validator holds
+// no state, so it is safe for concurrent use.
 type Validator struct {
 	ValidateExpr ExprValidator // nil: expressions are only checked for being non-empty
 	Refs         ExprRefs      // nil: every "tasks.<id>" in the text counts as a reference
@@ -46,8 +47,8 @@ type Validator struct {
 func Validate(def *model.Definition) []ValidationIssue { return Validator{}.Validate(def) }
 
 // Validate returns every problem in def, sorted by (task ID, code, message); nil means the
-// definition is valid. It runs in O(V+E) apart from expression checks, which walk ancestors
-// once per run_if=expr task.
+// definition is valid. It runs in O(V+E) apart from reference checks, which walk ancestors once
+// per task with a run_if expression or config placeholders.
 func (v Validator) Validate(def *model.Definition) []ValidationIssue {
 	if def == nil {
 		return []ValidationIssue{{Code: CodeInvalidWorkflowField, Message: "definition is missing"}}
@@ -64,6 +65,7 @@ func (v Validator) Validate(def *model.Definition) []ValidationIssue {
 		seen[t.ID] = true
 		validateTask(t, g, &c)
 		v.validateRunIf(def, t, &c)
+		validateTemplates(def, t, g, &c)
 	}
 	if _, done := g.topo(); slices.Contains(done, false) {
 		path := g.cycle(done)
@@ -180,10 +182,38 @@ func (v Validator) validateExpr(def *model.Definition, t *model.TaskDef, c *coll
 	if refs == nil {
 		refs = defaultRefs
 	}
+	checkRefs(def, t, newGraph(def), "run_if_expr", refs(t.RunIfExpr), c)
+}
+
+// validateTemplates checks the ${…} placeholders in t's config: each must parse and name only
+// ancestors of t (task 03.06), since those are the tasks that are terminal when t is queued.
+func validateTemplates(def *model.Definition, t *model.TaskDef, g *graph, c *collector) {
+	refs, err := template.Refs(t.Config)
+	if err != nil {
+		c.add(CodeInvalidReference, t.ID, "config: %v", err)
+		return
+	}
+	var tasks []string
+	for _, r := range refs {
+		if r.Task != "" && !slices.Contains(tasks, r.Task) {
+			tasks = append(tasks, r.Task)
+		}
+	}
+	checkRefs(def, t, g, "config", tasks, c)
+}
+
+// checkRefs reports each referenced task that is unknown or not an ancestor of t.
+func checkRefs(def *model.Definition, t *model.TaskDef, g *graph, where string, refs []string, c *collector) {
+	if len(refs) == 0 {
+		return
+	}
 	ancestors := Ancestors(def, t.ID)
-	for _, ref := range refs(t.RunIfExpr) {
-		if !slices.Contains(ancestors, ref) {
-			c.add(CodeInvalidRunIf, t.ID, "run_if_expr refers to %q, which is not an ancestor of this task", ref)
+	for _, ref := range refs {
+		switch _, known := g.index[ref]; {
+		case !known:
+			c.add(CodeInvalidReference, t.ID, "%s refers to unknown task %q", where, ref)
+		case !slices.Contains(ancestors, ref):
+			c.add(CodeInvalidReference, t.ID, "%s refers to %q, which is not an ancestor of this task", where, ref)
 		}
 	}
 }

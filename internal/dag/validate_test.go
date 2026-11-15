@@ -1,6 +1,7 @@
 package dag
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -97,7 +98,19 @@ func TestValidate_Table(t *testing.T) {
 		{"expr referring to a non-ancestor", def(task("a"), task("b"), with(task("c", "a"), func(t *model.TaskDef) {
 			t.RunIf = model.RunIfExpr
 			t.RunIfExpr = `tasks.b.result.ok && tasks.ghost.status == "FAILED"`
-		})), []issueKey{{CodeInvalidRunIf, "c"}, {CodeInvalidRunIf, "c"}}},
+		})), []issueKey{{CodeInvalidReference, "c"}, {CodeInvalidReference, "c"}}}, // INVALID_RUN_IF before 03.06
+		{"config placeholders naming ancestors and the run input", def(task("a"), task("b", "a"), with(task("c", "b"), func(t *model.TaskDef) {
+			t.Config = json.RawMessage(`{"from":"${tasks.a.result.window[0]}","s":"${tasks.b.status}","n":"run ${run.input.label}"}`)
+		})), nil},
+		{"config placeholder naming a non-ancestor and an unknown task", def(task("a"), task("b"), with(task("c", "a"), func(t *model.TaskDef) {
+			t.Config = json.RawMessage(`{"x":["${tasks.b.result.v}", {"y":"${tasks.ghost.status}"}]}`)
+		})), []issueKey{{CodeInvalidReference, "c"}, {CodeInvalidReference, "c"}}},
+		{"config placeholder naming itself", def(with(task("a"), func(t *model.TaskDef) {
+			t.Config = json.RawMessage(`{"x":"${tasks.a.result.v}"}`)
+		})), []issueKey{{CodeInvalidReference, "a"}}},
+		{"malformed config placeholder", def(with(task("a"), func(t *model.TaskDef) {
+			t.Config = json.RawMessage(`{"x":"${tasks.a}","y":"${run.input.z"}`)
+		})), []issueKey{{CodeInvalidReference, "a"}}},
 		{"workflow fields", &model.Definition{Name: "", Version: 0, TimeoutSeconds: -1, OnFailure: "retry",
 			Concurrency: model.Concurrency{MaxParallelTasks: 501}}, []issueKey{
 			{CodeInvalidWorkflowField, ""}, {CodeInvalidWorkflowField, ""}, {CodeInvalidWorkflowField, ""},
@@ -197,7 +210,7 @@ func TestValidator_ExprHooks(t *testing.T) {
 		Refs: func(string) []string { return []string{"a", "zzz"} },
 	}
 	got := v.Validate(d)
-	if !slices.Equal(keys(got), []issueKey{{CodeInvalidRunIf, "b"}, {CodeInvalidRunIf, "b"}}) {
+	if !slices.Equal(keys(got), []issueKey{{CodeInvalidReference, "b"}, {CodeInvalidRunIf, "b"}}) { // the unknown ref was INVALID_RUN_IF before 03.06
 		t.Fatalf("issues = %+v", got)
 	}
 	if !strings.Contains(got[0].Message+got[1].Message, "unexpected token ok") || !strings.Contains(got[0].Message+got[1].Message, `"zzz"`) {
