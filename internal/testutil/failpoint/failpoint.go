@@ -26,6 +26,9 @@ const (
 	// left out of Names: the relay is not part of the run lifecycle TestCrashConsistency drives;
 	// outbox's own crash test arms it.
 	OutboxAfterPublish = "outbox/after-publish-before-mark"
+	// CronAfterStart: the cron loop started a fire's run, the trigger is not advanced yet (03.08).
+	// Left out of Names for the same reason as OutboxAfterPublish; cron's own test arms it.
+	CronAfterStart = "cron/after-start-before-advance"
 )
 
 // Names lists every wired failpoint, for tests that cover them all.
