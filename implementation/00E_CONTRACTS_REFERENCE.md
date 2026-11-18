@@ -340,6 +340,7 @@ Envelope (JSON Schema `schemas/events/envelope.v1.schema.json`):
  "payload":{…}}
 ```
 Event types: `run.created|started|paused|resumed|succeeded|failed|cancelled|needs_attention`, `task.ready|queued|started|succeeded|failed|retry_scheduled|timed_out|cancelled|skipped`, `task.attempt.started|succeeded|failed|timed_out|abandoned`, `approval.requested|decided|executed`, `worker.registered|lost`, `scheduler.leader_changed`. Compatibility: additive optional fields only within a version; breaking change = new `event_version` and parallel schema file.
+Delivery (03.07): the outbox relay publishes **at least once**, in outbox id order per key (`run_id`); a message can be re-published after a lost acknowledgement or a relay crash, so consumers **dedupe on `event_id`** (also sent as the `event_id` header). Each run event also sends `NOTIFY ff_events` (empty payload) in its transaction, which wakes the SSE stream `GET /api/v1/events/stream`: `id:` = `workflow_events.id`, `event:` = `event_type`, `data:` = this envelope.
 
 Market tick payload (`market.ticks` value, schema `market_tick.v1`): `{event_id,symbol,event_time,ingested_at,price,size,source,sequence}`; `event_id` for synthetic data = `sha1(source|symbol|sequence|event_time)` hex; symbol regex `^[A-Z]{1,6}(\.[A-Z])?$`; price > 0; size > 0; `event_time` not > now+5 s.
 
@@ -402,6 +403,7 @@ Metric names (prefix per component; labels low-cardinality only: `queue`, `task_
 ### 11.1 Metric additions and canonical names (supersede any conflicting name above)
 - Streaming metrics use the prefix `flowforge_stream_*` (replacing the `marketdata_*` names): `flowforge_stream_duplicates_total`, `flowforge_stream_late_events_total{disposition}`, `flowforge_stream_lag{partition}`, `flowforge_stream_freshness_seconds{symbol}` (symbol label only when the configured universe is at most 50), `flowforge_stream_backpressure_active`, `flowforge_stream_db_write_seconds`; producer: `flowforge_producer_events_total{result}`, `flowforge_producer_publish_latency_seconds`.
 - Outbox: `flowforge_outbox_backlog`, `flowforge_outbox_oldest_age_seconds`, `flowforge_outbox_publish_failures_total`.
+- Retention (03.07): `flowforge_retention_deleted_rows_total{kind}` (`kind` = `outbox`, `workflow_events`, `task_logs`, `idempotency_keys`).
 - Audit: `flowforge_audit_write_failures_total` (02.05; audit rows that could not be written while the request proceeded).
 - Worker gRPC: `flowforge_grpc_requests_total{method,code}`, `flowforge_grpc_request_duration_seconds{method}` (03.01).
 - Leader loops (03.04): `flowforge_loop_errors_total{loop}` (`scheduler`, `timeout`, `recovery`); the label `loop` joins the allowed labels.

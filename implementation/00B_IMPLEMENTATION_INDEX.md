@@ -504,7 +504,7 @@ Tick when the task's completion report exists and all acceptance criteria are me
 - [x] `03.04` Retries, timeouts, worker-loss recovery and crash-consistent loops — `phase-03-scheduler-workers/03.04_retry_timeout_recovery.md`
 - [x] `03.05` Run cancellation, pause/resume and workflow-level timeout — `phase-03-scheduler-workers/03.05_cancel_pause_resume_workflow_timeout.md`
 - [x] `03.06` Task result passing, templating, conditional tasks, rerun/remediation — `phase-03-scheduler-workers/03.06_results_templating_conditionals_rerun.md`
-- [ ] `03.07` Event relay (outbox), SSE stream and retention jobs — `phase-03-scheduler-workers/03.07_events_outbox_sse_retention.md`
+- [x] `03.07` Event relay (outbox), SSE stream and retention jobs — `phase-03-scheduler-workers/03.07_events_outbox_sse_retention.md`
 - [ ] `03.08` Cron triggers (scheduled runs) — `phase-03-scheduler-workers/03.08_cron_triggers.md`
 - [ ] `03.09` Phase gate: flowforgectl CLI and workflow-engine end-to-end/crash-recovery suite — `phase-03-scheduler-workers/03.09_workflow_engine_e2e_gate.md`
 

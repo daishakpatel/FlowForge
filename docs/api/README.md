@@ -64,6 +64,7 @@ List endpoints return `{"items": [...], "next_cursor": "…" | null}`.
 - **`limit`:** defaults to 50, and values above 200 are clamped to 200. A value that isn't a positive integer is `400`.
 - **`cursor`:** pass the previous page's `next_cursor`. It is opaque, so don't build or parse it.
 - **Order:** definitions and runs are newest first, ordered by `(created_at, id)`, so equal timestamps never repeat or skip a row. Run events are oldest first.
+- **Live events:** `GET /api/v1/events/stream` is a Server-Sent Events stream (`text/event-stream`) of run events, filtered by `run_id`, `types` and `since`, resumable with `Last-Event-ID`. Its event ids are the same ids the run events list pages on ([events](../architecture/events.md)).
 - **Unpaged lists:** `GET /runs/{run_id}/tasks` and `GET /tasks/{task_id}/attempts` return everything; their `next_cursor` is always `null`. `GET /runs/{run_id}/tasks` lists the current instance of each task; add `?include_superseded=true` for every generation a rerun left behind ([rerun](../architecture/templating-and-rerun.md#rerun)).
 - **Run filters:** `GET /api/v1/runs` filters on `status`, `workflow` (the definition name), `since` and `until` (RFC 3339, on `created_at`).
 

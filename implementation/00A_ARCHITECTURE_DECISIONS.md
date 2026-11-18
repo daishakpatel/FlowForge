@@ -230,3 +230,25 @@ Format: Context → Decision → Alternatives considered → Consequences.
     - `transitions_test.go`: the `00E` copy, and one event case.
     - The scheduler fake store now copies `run_if_expr` and `config`.
   - **Tested by:** `TestResolve_*`, `TestEval_*`, `TestExpr_RandomInputsNeverPanic`, `TestValidate_Table`, `TestPlanRerun`, `TestProcessRun_ExprAndTemplatesSeeAncestors`, `TestTemplating_*`, `TestConditional_MarketDataFailureBranch`, `TestRerun_*` and `TestContract_API`.
+
+### ADR-009 amendment — 03.07 — 2026-11-17
+- **What:**
+  - **Relay transaction:** `outbox.RelayLoop` locks a batch of unpublished rows with `FOR UPDATE SKIP LOCKED` and publishes them inside the same transaction, which also asserts the epoch. A `PublishTimeout` (10 s) bounds it. Only the prefix the `Publisher` reports delivered (`PartialError`) is marked.
+  - **Publisher selection:** `FF_EVENT_PUBLISHER=log|none|kafka`. The default `log` writes debug lines; `none` discards events but marks them published; `kafka` is a startup error until 05.01.
+  - **Event channel:** `events.Recorder.Record` sends `NOTIFY ff_events` (empty payload) for every run event, in its transaction.
+  - **SSE stream:** `GET /api/v1/events/stream` reads `workflow_events`. It stays behind a commit horizon: a missing id holds the stream until it commits, or until it is missing for 1 s, or until the row after it is older than 30 s. The envelope comes from the outbox while that row exists and is rebuilt after.
+  - **Retention:** a new metric `flowforge_retention_deleted_rows_total{kind}`; the existing allowed label `kind` is reused.
+  - **Config:** `FF_SSE_MAX_CONNECTIONS` and `FF_RETENTION_*`, recorded in `00E` §6.
+- **Why:**
+  - **The relay transaction:** task 03.07 §4 asks for `FOR UPDATE SKIP LOCKED`, which only protects rows while the transaction is open. `00C` §9 says a transaction never spans a network call, but the task file ranks higher (`00C` §2.12). Asserting the epoch in that transaction also stops a deposed leader from marking rows.
+  - **The commit horizon:** `workflow_events.id` comes from a sequence assigned at insert, so a cursor that only moves forward would lose an event that commits after a higher id. The task requires no gaps.
+  - **The rebuilt envelope:** `workflow_events` stores no envelope, and outbox rows are deleted after 3 days.
+- **Impact:**
+  - **Compatible:** an endpoint, a NOTIFY channel, config keys, a metric and optional repository methods are added. `persistence.EventView` gains an optional `Envelope`. No table or column changes.
+  - **Cost:**
+    - A publish holds the outbox row locks and the epoch share lock for up to `PublishTimeout`, so a new leader's epoch raise can wait that long.
+    - Transactions that send NOTIFY commit one at a time (a Postgres global lock).
+  - **Changed tests:**
+    - 02.05's `TestRBAC_Matrix` serves the streaming operation under a short deadline, because a 200 is an endless stream.
+    - The 02.04 contract harness registers a `text/event-stream` decoder.
+  - **Tested by:** `TestRelay_*`, `TestRelayPG_*` (including the failpoint crash test), `TestStream_*`, `TestStreamPG_*`, `TestHub_*`, `TestLoop_*`, `TestLoopPG_*` and `TestContract_API`.
