@@ -37,7 +37,7 @@ test-integration: ## Integration tests (build tag `integration`; needs Docker or
 	go test -race -count=1 -timeout=10m -tags=integration ./...
 
 test-crash: ## Crash-consistency tests: failpoints compiled in (tags integration,failpoint; 03.04)
-	go test -race -count=1 -timeout=10m -tags='integration failpoint' ./internal/recovery/ ./internal/scheduler/ ./internal/workerapi/
+	go test -race -count=1 -timeout=10m -tags='integration failpoint' ./internal/recovery/ ./internal/scheduler/ ./internal/workerapi/ ./internal/outbox/
 
 lint: ## golangci-lint (formatters + linters, incl. boundary rules)
 	@golangci-lint --version | grep -q " $(GOLANGCI_LINT_VERSION) " || echo "lint: warning: expected golangci-lint $(GOLANGCI_LINT_VERSION) (see docs/decisions/versions.md)"

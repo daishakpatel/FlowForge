@@ -188,6 +188,18 @@ type RerunRepo interface {
 	InsertReruns(ctx context.Context, tx pgx.Tx, runID string, supersede []string) ([]string, error)
 }
 
+// OutboxRepo is the outbox relay's access to the outbox table (task 03.07, ADR-009). Rows are
+// written by events.Recorder in the transaction of the change they describe.
+type OutboxRepo interface {
+	// LockUnpublished returns up to limit unpublished rows in id order, row-locked until tx ends
+	// (FOR UPDATE SKIP LOCKED).
+	LockUnpublished(ctx context.Context, tx pgx.Tx, limit int) ([]OutboxView, error)
+	// MarkPublished sets published_at = at on the given rows that are still unpublished.
+	MarkPublished(ctx context.Context, tx pgx.Tx, ids []int64, at time.Time) error
+	// Backlog counts unpublished rows and returns the oldest one's created_at (nil when none).
+	Backlog(ctx context.Context, q Querier) (int64, *time.Time, error)
+}
+
 // NewDefinition is the input of DefinitionRepo.Create.
 type NewDefinition struct {
 	Name       string

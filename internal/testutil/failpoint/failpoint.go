@@ -22,6 +22,10 @@ const (
 	ProcessRunMidway = "scheduler/process-run-midway"
 	// OutcomeAfterAttemptEnded: an attempt is terminal, its task has not been moved yet.
 	OutcomeAfterAttemptEnded = "outcome/after-attempt-ended"
+	// OutboxAfterPublish: the relay published a batch, the rows are not marked yet (03.07). It is
+	// left out of Names: the relay is not part of the run lifecycle TestCrashConsistency drives;
+	// outbox's own crash test arms it.
+	OutboxAfterPublish = "outbox/after-publish-before-mark"
 )
 
 // Names lists every wired failpoint, for tests that cover them all.

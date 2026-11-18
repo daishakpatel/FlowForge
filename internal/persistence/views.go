@@ -147,3 +147,13 @@ type TaskLogView struct {
 	Message   string
 	Fields    json.RawMessage
 }
+
+// OutboxView is an outbox row: one event envelope to publish (task 03.07).
+type OutboxView struct {
+	ID        int64 // publication order
+	EventID   string
+	Topic     string
+	Key       string // run id, or the aggregate id of a cluster event; the per-key order is kept
+	Envelope  json.RawMessage
+	CreatedAt time.Time
+}
