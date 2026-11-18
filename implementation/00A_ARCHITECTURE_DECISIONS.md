@@ -252,3 +252,20 @@ Format: Context → Decision → Alternatives considered → Consequences.
     - 02.05's `TestRBAC_Matrix` serves the streaming operation under a short deadline, because a 200 is an endless stream.
     - The 02.04 contract harness registers a `text/event-stream` decoder.
   - **Tested by:** `TestRelay_*`, `TestRelayPG_*` (including the failpoint crash test), `TestStream_*`, `TestStreamPG_*`, `TestHub_*`, `TestLoop_*`, `TestLoopPG_*` and `TestContract_API`.
+
+### ADR-007 amendment — 03.08 — 2026-11-17
+- **What:**
+  - **Firing:** cron triggers fire through the idempotent run start, with `Idempotency-Key` = `cron:<trigger_id>:<fire time, Unix seconds>` and the run's `trigger_id` set.
+  - **Fire loop:** `cron.Loop` locks due triggers with `FOR UPDATE SKIP LOCKED` in an epoch-fenced transaction. It advances `next_fire_at` conditionally on its old value and audits each fire as `system:cron`.
+  - **Missed fires:** after `FF_CRON_MISSED_GRACE` (60 s), `skip` drops them and `catch_up_one` starts the oldest once. Catch-up is capped at 24 h.
+  - **DST:** a schedule fires at each wall-clock time once. A time in a spring-forward gap fires at the gap's end; a fall-back repeat fires on its first occurrence only.
+  - **Additions in `00E`:** `FF_CRON_MISSED_GRACE` (§6) and `flowforge_cron_fires_total{outcome}` (§11.1).
+  - **Trigger validation:** errors are `400 INVALID_ARGUMENT` with the field.
+- **Why:**
+  - The task requires at most one run per fire across crashes and concurrent or failed-over loops. The idempotency key gives that without a new table.
+  - Idempotency keys are cleared after 24 h (03.07), which is the catch-up cap.
+  - `00E` §4 defines 422 only for `INVALID_WORKFLOW`, so the task's "422/400" uses the existing 400.
+- **Impact:**
+  - **Compatible:** a config key, a metric, endpoints already listed in `00E` §9, and a failpoint (`cron/after-start-before-advance`). No schema change; `cron_triggers` is from 0004.
+  - **Changed tests:** the contract harness's sample path gains `{trigger_id}`.
+  - **Tested by:** `TestNextFire`, `TestParse_Rejects`, `TestLoop_*`, `TestCronPG_*` (including the failpoint crash test) and `TestContract_API`.

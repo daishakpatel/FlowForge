@@ -404,6 +404,7 @@ Metric names (prefix per component; labels low-cardinality only: `queue`, `task_
 ### 11.1 Metric additions and canonical names (supersede any conflicting name above)
 - Streaming metrics use the prefix `flowforge_stream_*` (replacing the `marketdata_*` names): `flowforge_stream_duplicates_total`, `flowforge_stream_late_events_total{disposition}`, `flowforge_stream_lag{partition}`, `flowforge_stream_freshness_seconds{symbol}` (symbol label only when the configured universe is at most 50), `flowforge_stream_backpressure_active`, `flowforge_stream_db_write_seconds`; producer: `flowforge_producer_events_total{result}`, `flowforge_producer_publish_latency_seconds`.
 - Outbox: `flowforge_outbox_backlog`, `flowforge_outbox_oldest_age_seconds`, `flowforge_outbox_publish_failures_total`.
+- Cron (03.08): `flowforge_cron_fires_total{outcome}` (`outcome` = `fired`, `replayed`, `skipped`, `failed`).
 - Retention (03.07): `flowforge_retention_deleted_rows_total{kind}` (`kind` = `outbox`, `workflow_events`, `task_logs`, `idempotency_keys`).
 - Audit: `flowforge_audit_write_failures_total` (02.05; audit rows that could not be written while the request proceeded).
 - Worker gRPC: `flowforge_grpc_requests_total{method,code}`, `flowforge_grpc_request_duration_seconds{method}` (03.01).
