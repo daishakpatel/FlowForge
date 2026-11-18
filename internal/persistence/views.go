@@ -173,3 +173,26 @@ type OutboxView struct {
 	Envelope  json.RawMessage
 	CreatedAt time.Time
 }
+
+// Missed-fire policies of a cron trigger (00E §2).
+const (
+	MissedSkip       = "skip"
+	MissedCatchUpOne = "catch_up_one"
+)
+
+// TriggerView is a stored cron trigger (task 03.08).
+type TriggerView struct {
+	ID              string
+	Name            string
+	WorkflowName    string
+	WorkflowVersion *int // nil: the latest version at each fire
+	Schedule        string
+	Timezone        string
+	Input           json.RawMessage
+	MissedPolicy    string
+	Enabled         bool
+	NextFireAt      *time.Time // nil: the trigger does not fire
+	LastFiredAt     *time.Time
+	CreatedBy       string
+	CreatedAt       time.Time
+}

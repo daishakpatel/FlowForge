@@ -231,6 +231,53 @@ type RetentionRepo interface {
 	Purge(ctx context.Context, q Querier, target RetentionTarget, before time.Time, limit int) (int64, error)
 }
 
+// TriggerRepo stores cron triggers (task 03.08).
+type TriggerRepo interface {
+	// Create inserts a trigger with a new id; a duplicate name is CONFLICT.
+	Create(ctx context.Context, q Querier, t NewTrigger) (TriggerView, error)
+	Get(ctx context.Context, q Querier, id string) (TriggerView, error)
+	// List returns one keyset page, newest first, and the cursor of the next page ("" at the end).
+	List(ctx context.Context, q Querier, page Page) ([]TriggerView, string, error)
+	// Update replaces the mutable fields of trigger id; NOT_FOUND when it does not exist.
+	Update(ctx context.Context, q Querier, id string, u TriggerUpdate) (TriggerView, error)
+	// Delete removes a trigger; NOT_FOUND when it does not exist. Runs keep their trigger_id.
+	Delete(ctx context.Context, q Querier, id string) error
+	// LockDue returns up to limit enabled triggers with next_fire_at <= now, oldest fire first,
+	// row-locked until tx ends; rows another transaction holds are skipped (SKIP LOCKED).
+	LockDue(ctx context.Context, tx pgx.Tx, now time.Time, limit int) ([]TriggerView, error)
+	// Advance sets next_fire_at = next (nil stops the trigger) and, when firedAt is set,
+	// last_fired_at, only if next_fire_at is still old. It reports whether it did.
+	Advance(ctx context.Context, tx pgx.Tx, id string, old time.Time, next, firedAt *time.Time) (bool, error)
+}
+
+// NewTrigger is the input of TriggerRepo.Create.
+type NewTrigger struct {
+	Name            string
+	WorkflowName    string
+	WorkflowVersion *int // nil: the latest version at each fire
+	Schedule        string
+	Timezone        string
+	Input           json.RawMessage
+	MissedPolicy    string
+	Enabled         bool
+	NextFireAt      *time.Time
+	CreatedBy       string
+}
+
+// TriggerUpdate is the input of TriggerRepo.Update: the new values of every mutable field.
+type TriggerUpdate struct {
+	WorkflowVersion *int
+	Schedule        string
+	Timezone        string
+	Input           json.RawMessage
+	MissedPolicy    string
+	Enabled         bool
+	NextFireAt      *time.Time
+	// KeepNextFire keeps the stored next_fire_at instead of NextFireAt, so an update that does
+	// not reschedule never reverts an advance the cron loop made since the trigger was read.
+	KeepNextFire bool
+}
+
 // NewDefinition is the input of DefinitionRepo.Create.
 type NewDefinition struct {
 	Name       string
