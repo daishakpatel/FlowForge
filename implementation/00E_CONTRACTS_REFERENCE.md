@@ -303,6 +303,7 @@ Election tick 10 × 100 ms = 1 s heartbeat tick 1 (100 ms); `PreVote` and `Check
 | `FF_SCHED_HTTP_ADDR` | `:8081` (`/metrics`, `/healthz`, `/readyz`) | scheduler |
 | `FF_QUEUE_LIMITS` | unset = unlimited (`queue=n,queue2=m`: max QUEUED+RUNNING tasks per queue across runs) | scheduler |
 | `FF_EVENT_PUBLISHER` | `log` (`log` \| `kafka` \| `none`: the outbox relay's publisher; `kafka` from 05.01; 03.07) | scheduler |
+| `FF_CRON_MISSED_GRACE` | `60s` (a cron fire later than this follows the trigger's `missed_policy`; 03.08) | scheduler |
 | `FF_RETENTION_OUTBOX` / `FF_RETENTION_EVENTS` / `FF_RETENTION_TASK_LOGS` / `FF_RETENTION_IDEMPOTENCY` | `72h` / `720h` / `336h` / `24h` (published outbox rows, workflow events, task logs; Idempotency-Key lifetime; 03.07) | scheduler |
 | `FF_LEADER_TTL` / `FF_LEADER_RENEW` | `10s` / `3s` | scheduler |
 | `FF_WORKER_LEASE_TTL` / `FF_WORKER_HEARTBEAT` | `15s` / `5s` | api, worker, scheduler (recovery, 03.04) |

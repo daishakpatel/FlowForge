@@ -74,6 +74,7 @@ Defaults are dev-only. "—" means there is no default.
 | `FF_RETENTION_EVENTS` | `720h` | positive; workflow events (run history) are deleted after this | `Scheduler` |
 | `FF_RETENTION_TASK_LOGS` | `336h` | positive; task log lines are deleted after this | `Scheduler` |
 | `FF_RETENTION_IDEMPOTENCY` | `24h` | positive; a run's `Idempotency-Key` is cleared after this | `Scheduler` |
+| `FF_CRON_MISSED_GRACE` | `60s` | positive; how late a cron fire may still start its run; later fires follow the trigger's `missed_policy` ([cron](architecture/cron.md)) | `Scheduler` |
 | `FF_LEADER_TTL` | `10s` | positive | `Scheduler` |
 | `FF_LEADER_RENEW` | `3s` | positive, < TTL/2 | `Scheduler` |
 | `FF_KAFKA_BROKERS` | `localhost:9092` | addr (each) | `Scheduler` (outbox relay), `Worker`, `Processor` |

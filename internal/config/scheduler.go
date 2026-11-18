@@ -31,6 +31,9 @@ type Scheduler struct {
 	RetentionEvents      time.Duration `env:"FF_RETENTION_EVENTS" default:"720h" validate:"positive"`
 	RetentionTaskLogs    time.Duration `env:"FF_RETENTION_TASK_LOGS" default:"336h" validate:"positive"`
 	RetentionIdempotency time.Duration `env:"FF_RETENTION_IDEMPOTENCY" default:"24h" validate:"positive"`
+	// CronMissedGrace is how late a cron fire may still start its run; a later fire follows the
+	// trigger's missed_policy (task 03.08).
+	CronMissedGrace time.Duration `env:"FF_CRON_MISSED_GRACE" default:"60s" validate:"positive"`
 }
 
 // QueueLimitMap returns FF_QUEUE_LIMITS as queue → the most QUEUED+RUNNING tasks that queue may

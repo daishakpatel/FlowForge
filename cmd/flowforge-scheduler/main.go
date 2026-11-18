@@ -126,6 +126,9 @@ func run(ctx context.Context, opts config.Options, logOut io.Writer, listen func
 	if err := registerEventLoops(runner, cfg, reg, logger, pool, txm, loopErrors); err != nil {
 		return err
 	}
+	if err := registerCron(runner, cfg, reg, pool, txm, gen, rec, loopErrors); err != nil {
+		return err
+	}
 
 	ln, err := listen(ctx, "tcp", cfg.HTTPAddr)
 	if err != nil {

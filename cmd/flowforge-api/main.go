@@ -108,13 +108,17 @@ func run(ctx context.Context, opts config.Options, logOut io.Writer, listen func
 		return pgx.Connect(ctx, cfg.PGDSN.Reveal())
 	}, clock.Real{}, events.NotifyChannel)
 	streams := sse.NewHub(eventsWaker, cfg.SSEMaxConnections)
+	runService := &service.RunService{
+		DB: pool, Tx: txm, DefRepo: defs,
+		RunRepo: runRepo, Reruns: runRepo, TaskRepo: pg.NewTaskRepo(rec),
+		AttemptRepo: pg.NewAttemptRepo(gen, rec), EventRepo: pg.EventRepo{},
+		RunControl: pg.RunControlRepo{}, Notify: pg.SchedulerRepo{}, Clock: clock.Real{}, CancelGrace: cfg.CancelGrace,
+	}
 	router, err := rest.NewRouter(rest.Deps{
 		Workflows: &service.WorkflowService{DB: pool, DefRepo: defs},
-		Runs: &service.RunService{
-			DB: pool, Tx: txm, DefRepo: defs,
-			RunRepo: runRepo, Reruns: runRepo, TaskRepo: pg.NewTaskRepo(rec),
-			AttemptRepo: pg.NewAttemptRepo(gen, rec), EventRepo: pg.EventRepo{},
-			RunControl: pg.RunControlRepo{}, Notify: pg.SchedulerRepo{}, Clock: clock.Real{}, CancelGrace: cfg.CancelGrace,
+		Runs:      runService,
+		Triggers: &service.TriggerService{
+			DB: pool, Triggers: pg.NewTriggerRepo(gen), DefRepo: defs, RunRepo: runRepo, Runs: runService, Clock: clock.Real{},
 		},
 		Auth: authn, IDs: gen, Clock: clock.Real{}, Logger: logger,
 		Metrics: reg,
