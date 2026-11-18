@@ -17,6 +17,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 )
 
@@ -130,9 +132,9 @@ func walk(v any, fn func(string) (any, error)) (any, error) {
 	case string:
 		return fn(c)
 	case map[string]any:
-		for k, e := range c {
+		for _, k := range slices.Sorted(maps.Keys(c)) { // key order: deterministic Refs and first error
 			var err error
-			if c[k], err = walk(e, fn); err != nil {
+			if c[k], err = walk(c[k], fn); err != nil {
 				return nil, err
 			}
 		}
