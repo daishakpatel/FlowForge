@@ -107,6 +107,9 @@ func newAPIEnv(t *testing.T) *apiEnv {
 	deps.Auth, deps.DB, deps.Tx, deps.APIKeys, deps.Audit = authn, pool, runs.Tx, pg.APIKeyRepo{}, pg.AuditRepo{}
 	deps.Workers, deps.Logs, deps.WorkerLeaseTTL = pg.WorkerRepo{}, pg.TaskLogRepo{}, 15*time.Second
 	deps.Events = streamHandler(pool, sse.DefaultMaxStreams)
+	deps.Triggers = &service.TriggerService{
+		DB: pool, Triggers: pg.NewTriggerRepo(g), DefRepo: runs.DefRepo, RunRepo: runs.RunRepo, Runs: runs, Clock: clock.Real{},
+	}
 	raw, err := NewRouter(deps)
 	if err != nil {
 		t.Fatal(err)
@@ -419,6 +422,7 @@ func TestContract_API(t *testing.T) {
 	want(t, code, 409, "revoke the last admin key")
 
 	streamContract(t, e, c, r)
+	triggerContract(t, do)
 
 	// Every /api/v1 operation: 401 without a key, 403 for a worker key (no human route allows
 	// it), 429 once the key's bucket is empty.
@@ -652,4 +656,55 @@ func streamContract(t *testing.T, e *apiEnv, c *contract, r http.Handler) {
 	if rec.Code != 503 || rec.Header().Get("Retry-After") == "" {
 		t.Errorf("stream over the limit: %d (Retry-After %q); want 503 with Retry-After", rec.Code, rec.Header().Get("Retry-After"))
 	}
+}
+
+// triggerContract produces every documented status of the trigger operations (03.08) that the
+// per-operation 401/403/429 sweep does not.
+func triggerContract(t *testing.T, do func(string, string, []byte, ...string) (int, []byte, http.Header)) {
+	t.Helper()
+	create := []byte(`{"name":"hourly-md","workflow_name":"market-data-hourly","schedule":"0 * * * *","timezone":"America/New_York","input":{"symbols":["AAPL"]}}`)
+	code, body, h := do("POST", "/api/v1/triggers", create)
+	want(t, code, 201, "create trigger")
+	tr := decodeBody[triggerResponse](t, body)
+	if h.Get("Location") != "/api/v1/triggers/"+tr.ID || tr.NextFireAt == nil || !tr.Enabled || tr.MissedPolicy != "skip" {
+		t.Errorf("created trigger = %+v, Location %q", tr, h.Get("Location"))
+	}
+	code, _, _ = do("POST", "/api/v1/triggers", create)
+	want(t, code, 409, "duplicate trigger name")
+	for _, bad := range []string{
+		`{"name":"x","workflow_name":"market-data-hourly","schedule":"*/10 * * * * *"}`,
+		`{"name":"x","workflow_name":"market-data-hourly","schedule":"0 * * * *","timezone":"Mars/Base"}`,
+		`{"name":"x","workflow_name":"no-such-workflow","schedule":"0 * * * *"}`,
+		`{"name":"x","workflow_name":"market-data-hourly","schedule":"0 * * * *","input":[1]}`,
+		`{"name":"Bad Name","workflow_name":"market-data-hourly","schedule":"0 * * * *"}`,
+	} {
+		code, _, _ = do("POST", "/api/v1/triggers", []byte(bad))
+		want(t, code, 400, "invalid trigger "+bad)
+	}
+	code, _, _ = do("GET", "/api/v1/triggers?limit=10", nil)
+	want(t, code, 200, "list triggers")
+	code, _, _ = do("GET", "/api/v1/triggers?cursor=garbage!", nil)
+	want(t, code, 400, "bad triggers cursor")
+	code, _, _ = do("GET", "/api/v1/triggers/"+tr.ID, nil)
+	want(t, code, 200, "get trigger")
+	code, _, _ = do("GET", "/api/v1/triggers/trg_missing", nil)
+	want(t, code, 404, "missing trigger")
+	code, body, _ = do("PATCH", "/api/v1/triggers/"+tr.ID, []byte(`{"enabled":false}`))
+	want(t, code, 200, "disable trigger")
+	if v := decodeBody[triggerResponse](t, body); v.Enabled || v.NextFireAt != nil {
+		t.Errorf("disabled trigger = %+v; want no next_fire_at", v)
+	}
+	code, body, _ = do("PATCH", "/api/v1/triggers/"+tr.ID, []byte(`{"enabled":true,"schedule":"*/15 * * * *"}`))
+	want(t, code, 200, "re-enable with a new schedule")
+	if v := decodeBody[triggerResponse](t, body); !v.Enabled || v.NextFireAt == nil || v.Schedule != "*/15 * * * *" {
+		t.Errorf("rescheduled trigger = %+v", v)
+	}
+	code, _, _ = do("PATCH", "/api/v1/triggers/"+tr.ID, []byte(`{"timezone":"Nowhere/Land"}`))
+	want(t, code, 400, "patch with a bad timezone")
+	code, _, _ = do("PATCH", "/api/v1/triggers/trg_missing", []byte(`{"enabled":true}`))
+	want(t, code, 404, "patch a missing trigger")
+	code, _, _ = do("DELETE", "/api/v1/triggers/"+tr.ID, nil)
+	want(t, code, 204, "delete trigger")
+	code, _, _ = do("DELETE", "/api/v1/triggers/"+tr.ID, nil)
+	want(t, code, 404, "delete again")
 }

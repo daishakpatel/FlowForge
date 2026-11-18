@@ -551,6 +551,105 @@ paths:
         '429': {$ref: '#/components/responses/RateLimited'}
         default: {$ref: '#/components/responses/Error'}
 
+  /api/v1/triggers:
+    post:
+      operationId: createTrigger
+      summary: Create a cron trigger (admin)
+      description: >-
+        Starts runs of a workflow on a 5-field cron schedule in an IANA timezone (task 03.08). The
+        workflow (and version, when given) must exist, the schedule must parse with fires at least
+        a minute apart, and input must be a JSON object; otherwise 400 with the offending field.
+        next_fire_at is computed when the trigger is enabled.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateTriggerRequest'}
+      responses:
+        '201':
+          description: The trigger.
+          headers:
+            Location: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Trigger'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        default: {$ref: '#/components/responses/Error'}
+    get:
+      operationId: listTriggers
+      summary: Cron triggers, newest first (viewer)
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: One page of triggers.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TriggerList'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/triggers/{trigger_id}:
+    get:
+      operationId: getTrigger
+      summary: One cron trigger (viewer)
+      parameters:
+        - $ref: '#/components/parameters/TriggerID'
+      responses:
+        '200':
+          description: The trigger.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Trigger'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      operationId: updateTrigger
+      summary: Enable, disable, reschedule or change a cron trigger (admin)
+      description: >-
+        Omitted fields are unchanged. Enabling, or changing the schedule or timezone, recomputes
+        next_fire_at from now; disabling clears it, so the trigger stops firing.
+      parameters:
+        - $ref: '#/components/parameters/TriggerID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateTriggerRequest'}
+      responses:
+        '200':
+          description: The trigger after the change.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Trigger'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      operationId: deleteTrigger
+      summary: Delete a cron trigger (admin); runs it started keep their trigger_id
+      parameters:
+        - $ref: '#/components/parameters/TriggerID'
+      responses:
+        '204': {description: Deleted.}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        default: {$ref: '#/components/responses/Error'}
   /api/v1/events/stream:
     get:
       operationId: streamEvents
@@ -614,6 +713,11 @@ components:
       schema: {type: string}
 
   parameters:
+    TriggerID:
+      name: trigger_id
+      in: path
+      required: true
+      schema: {type: string}
     Limit:
       name: limit
       in: query
@@ -890,6 +994,55 @@ components:
           items: {$ref: '#/components/schemas/Task'}
         next_cursor: {$ref: '#/components/schemas/NextCursor'}
 
+    Trigger:
+      type: object
+      additionalProperties: false
+      required: [id, name, workflow_name, schedule, timezone, input, missed_policy, enabled, created_by, created_at]
+      properties:
+        id: {type: string, pattern: '^trg_'}
+        name: {type: string}
+        workflow_name: {type: string}
+        workflow_version: {type: integer, minimum: 1, description: 'Absent: the latest version at each fire.'}
+        schedule: {type: string, description: '5-field cron: minute hour day-of-month month day-of-week.'}
+        timezone: {type: string, description: IANA timezone.}
+        input: {type: object}
+        missed_policy: {type: string, enum: [skip, catch_up_one]}
+        enabled: {type: boolean}
+        next_fire_at: {type: string, format: date-time, description: 'Absent while disabled.'}
+        last_fired_at: {type: string, format: date-time}
+        created_by: {type: string}
+        created_at: {type: string, format: date-time}
+    TriggerList:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Trigger'}
+        next_cursor: {$ref: '#/components/schemas/NextCursor'}
+    CreateTriggerRequest:
+      type: object
+      additionalProperties: false
+      required: [name, workflow_name, schedule]
+      properties:
+        name: {type: string, pattern: '^[a-z][a-z0-9_-]{0,127}$'}
+        workflow_name: {type: string}
+        workflow_version: {type: integer, minimum: 1}
+        schedule: {type: string}
+        timezone: {type: string, default: UTC}
+        input: {type: object}
+        missed_policy: {type: string, enum: [skip, catch_up_one], default: skip}
+        enabled: {type: boolean, default: true}
+    UpdateTriggerRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        enabled: {type: boolean}
+        schedule: {type: string}
+        timezone: {type: string}
+        input: {type: object}
+        missed_policy: {type: string, enum: [skip, catch_up_one]}
     RerunRequest:
       type: object
       additionalProperties: false

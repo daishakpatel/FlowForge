@@ -49,6 +49,9 @@ type Deps struct {
 
 	// Task 03.07: the SSE stream GET /api/v1/events/stream.
 	Events *sse.Handler
+
+	// Task 03.08: cron triggers.
+	Triggers *service.TriggerService
 }
 
 type handlers struct {
@@ -63,6 +66,7 @@ type handlers struct {
 	logs      persistence.TaskLogRepo
 	leaseTTL  time.Duration
 	events    *sse.Handler
+	triggers  *service.TriggerService
 }
 
 // NewRouter builds the API router. Every request passes RequestID → Recover → Logging →
@@ -80,7 +84,7 @@ func NewRouter(d Deps) (chi.Router, error) {
 		return nil, err
 	}
 	h := &handlers{workflows: d.Workflows, runs: d.Runs, db: d.DB, tx: d.Tx, keys: d.APIKeys, auth: d.Auth, clock: d.Clock,
-		workers: d.Workers, logs: d.Logs, leaseTTL: d.WorkerLeaseTTL, events: d.Events}
+		workers: d.Workers, logs: d.Logs, leaseTTL: d.WorkerLeaseTTL, events: d.Events, triggers: d.Triggers}
 	acl := routeACL()
 	lim := newLimiter(d.Clock, d.RateLimitRPS, 2*d.RateLimitRPS)
 
@@ -124,6 +128,11 @@ func NewRouter(d Deps) (chi.Router, error) {
 			r.Get("/workers", h.listWorkers)
 			r.Get("/attempts/{attempt_id}/logs", h.listAttemptLogs)
 			r.Get("/events/stream", h.streamEvents)
+			r.Post("/triggers", h.createTrigger)
+			r.Get("/triggers", h.listTriggers)
+			r.Get("/triggers/{trigger_id}", h.getTrigger)
+			r.Patch("/triggers/{trigger_id}", h.updateTrigger)
+			r.Delete("/triggers/{trigger_id}", h.deleteTrigger)
 		})
 	})
 	return r, nil

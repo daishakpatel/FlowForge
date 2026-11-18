@@ -151,7 +151,7 @@ type specOp struct {
 
 // samplePath fills path parameters with placeholder ids.
 func (s specOp) samplePath() string {
-	r := strings.NewReplacer("{id}", "wf_x", "{name}", "nope", "{run_id}", "run_x", "{task_id}", "task_x", "{key_id}", "nokeyhere234", "{attempt_id}", "att_x")
+	r := strings.NewReplacer("{id}", "wf_x", "{name}", "nope", "{run_id}", "run_x", "{task_id}", "task_x", "{key_id}", "nokeyhere234", "{attempt_id}", "att_x", "{trigger_id}", "trg_x")
 	return r.Replace(s.path)
 }
 
