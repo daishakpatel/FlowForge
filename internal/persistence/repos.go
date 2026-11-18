@@ -213,6 +213,24 @@ type OutboxRepo interface {
 	Backlog(ctx context.Context, q Querier) (int64, *time.Time, error)
 }
 
+// RetentionTarget is what a retention pass removes (task 03.07).
+type RetentionTarget string
+
+// The retention targets; the values are the flowforge_retention_deleted_rows_total{kind} labels.
+const (
+	RetainOutbox          RetentionTarget = "outbox"           // published outbox rows
+	RetainEvents          RetentionTarget = "workflow_events"  // run history
+	RetainTaskLogs        RetentionTarget = "task_logs"        // attempt log lines
+	RetainIdempotencyKeys RetentionTarget = "idempotency_keys" // workflow_runs.idempotency_key set to NULL
+)
+
+// RetentionRepo removes old rows in bounded batches (task 03.07).
+type RetentionRepo interface {
+	// Purge removes, or for idempotency keys clears, up to limit rows of target older than
+	// before, oldest first, in one statement, and returns how many it touched.
+	Purge(ctx context.Context, q Querier, target RetentionTarget, before time.Time, limit int) (int64, error)
+}
+
 // NewDefinition is the input of DefinitionRepo.Create.
 type NewDefinition struct {
 	Name       string
