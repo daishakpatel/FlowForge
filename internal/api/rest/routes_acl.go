@@ -29,6 +29,7 @@ func routeACL() map[string]string {
 		"DELETE /api/v1/api-keys/{key_id}":       auth.RoleAdmin,
 		"GET /api/v1/workers":                    auth.RoleViewer,
 		"GET /api/v1/attempts/{attempt_id}/logs": auth.RoleViewer,
+		"GET /api/v1/events/stream":              auth.RoleViewer,
 	}
 }
 

@@ -11,6 +11,45 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const eventMarksAfter = `-- name: EventMarksAfter :many
+SELECT id, created_at FROM workflow_events
+WHERE id > $1
+ORDER BY id
+LIMIT $2
+`
+
+type EventMarksAfterParams struct {
+	AfterID int64
+	Lim     int32
+}
+
+type EventMarksAfterRow struct {
+	ID        int64
+	CreatedAt pgtype.Timestamptz
+}
+
+// The next ids after @after_id, unfiltered, with their creation time: the SSE stream finds the
+// commit horizon from them (ids are assigned at insert, so a missing id may still commit).
+func (q *Queries) EventMarksAfter(ctx context.Context, arg EventMarksAfterParams) ([]EventMarksAfterRow, error) {
+	rows, err := q.db.Query(ctx, eventMarksAfter, arg.AfterID, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []EventMarksAfterRow
+	for rows.Next() {
+		var i EventMarksAfterRow
+		if err := rows.Scan(&i.ID, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const insertOutbox = `-- name: InsertOutbox :exec
 INSERT INTO outbox (event_id, topic, key, envelope)
 VALUES ($1, $2, $3, $4)
@@ -64,6 +103,18 @@ func (q *Queries) InsertWorkflowEvent(ctx context.Context, arg InsertWorkflowEve
 	return err
 }
 
+const lastEventID = `-- name: LastEventID :one
+SELECT COALESCE(max(id), 0)::bigint FROM workflow_events
+`
+
+// The newest workflow_events.id, 0 when there is none: where a live-only stream starts.
+func (q *Queries) LastEventID(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, lastEventID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const listEventsByRun = `-- name: ListEventsByRun :many
 SELECT id, event_id, run_id, task_id, event_type, event_version, payload, correlation_id, created_at FROM workflow_events
 WHERE run_id = $1 AND id > $2
@@ -97,6 +148,152 @@ func (q *Queries) ListEventsByRun(ctx context.Context, arg ListEventsByRunParams
 			&i.Payload,
 			&i.CorrelationID,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const streamEvents = `-- name: StreamEvents :many
+SELECT e.id, e.event_id, e.run_id, e.task_id, e.event_type, e.event_version, e.payload,
+       e.correlation_id, e.created_at, o.envelope
+FROM workflow_events e
+LEFT JOIN outbox o ON o.event_id = e.event_id
+WHERE e.id > $1 AND e.id <= $2
+  AND ($3::text[] IS NULL OR e.event_type = ANY($3::text[]))
+  AND ($4::timestamptz IS NULL OR e.created_at >= $4::timestamptz)
+ORDER BY e.id
+LIMIT $5
+`
+
+type StreamEventsParams struct {
+	AfterID int64
+	UpTo    int64
+	Types   []string
+	Since   pgtype.Timestamptz
+	Lim     int32
+}
+
+type StreamEventsRow struct {
+	ID            int64
+	EventID       string
+	RunID         string
+	TaskID        pgtype.Text
+	EventType     string
+	EventVersion  int32
+	Payload       []byte
+	CorrelationID string
+	CreatedAt     pgtype.Timestamptz
+	Envelope      []byte
+}
+
+// The SSE stream (03.07): events after a workflow_events.id, optionally of some types and created
+// since a time, up to an id the stream knows is settled (EventMarksAfter), with the outbox envelope
+// while its row exists (published rows are kept 3 days). Walks the primary key from after_id.
+func (q *Queries) StreamEvents(ctx context.Context, arg StreamEventsParams) ([]StreamEventsRow, error) {
+	rows, err := q.db.Query(ctx, streamEvents,
+		arg.AfterID,
+		arg.UpTo,
+		arg.Types,
+		arg.Since,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []StreamEventsRow
+	for rows.Next() {
+		var i StreamEventsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.EventID,
+			&i.RunID,
+			&i.TaskID,
+			&i.EventType,
+			&i.EventVersion,
+			&i.Payload,
+			&i.CorrelationID,
+			&i.CreatedAt,
+			&i.Envelope,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const streamRunEvents = `-- name: StreamRunEvents :many
+SELECT e.id, e.event_id, e.run_id, e.task_id, e.event_type, e.event_version, e.payload,
+       e.correlation_id, e.created_at, o.envelope
+FROM workflow_events e
+LEFT JOIN outbox o ON o.event_id = e.event_id
+WHERE e.run_id = $1 AND e.id > $2 AND e.id <= $3
+  AND ($4::text[] IS NULL OR e.event_type = ANY($4::text[]))
+  AND ($5::timestamptz IS NULL OR e.created_at >= $5::timestamptz)
+ORDER BY e.id
+LIMIT $6
+`
+
+type StreamRunEventsParams struct {
+	RunID   string
+	AfterID int64
+	UpTo    int64
+	Types   []string
+	Since   pgtype.Timestamptz
+	Lim     int32
+}
+
+type StreamRunEventsRow struct {
+	ID            int64
+	EventID       string
+	RunID         string
+	TaskID        pgtype.Text
+	EventType     string
+	EventVersion  int32
+	Payload       []byte
+	CorrelationID string
+	CreatedAt     pgtype.Timestamptz
+	Envelope      []byte
+}
+
+// StreamEvents for one run; uses ix_events_run.
+func (q *Queries) StreamRunEvents(ctx context.Context, arg StreamRunEventsParams) ([]StreamRunEventsRow, error) {
+	rows, err := q.db.Query(ctx, streamRunEvents,
+		arg.RunID,
+		arg.AfterID,
+		arg.UpTo,
+		arg.Types,
+		arg.Since,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []StreamRunEventsRow
+	for rows.Next() {
+		var i StreamRunEventsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.EventID,
+			&i.RunID,
+			&i.TaskID,
+			&i.EventType,
+			&i.EventVersion,
+			&i.Payload,
+			&i.CorrelationID,
+			&i.CreatedAt,
+			&i.Envelope,
 		); err != nil {
 			return nil, err
 		}

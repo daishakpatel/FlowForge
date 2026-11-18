@@ -551,6 +551,49 @@ paths:
         '429': {$ref: '#/components/responses/RateLimited'}
         default: {$ref: '#/components/responses/Error'}
 
+  /api/v1/events/stream:
+    get:
+      operationId: streamEvents
+      summary: Server-Sent Events stream of run events (viewer)
+      description: >-
+        Streams workflow events from Postgres (not Kafka) as text/event-stream, one message per
+        event: `id: <event id>`, `event: <event_type>`, `data: <00E §7 envelope JSON>`. The id is
+        the same workflow event id the run events list pages on. Reconnect with the
+        `Last-Event-ID` header to resume after the last event received, with no gaps or
+        duplicates. Without it, a stream starts at the run's first event when `run_id` is given,
+        at `since` when given, and otherwise with new events only. A `: keep-alive` comment is
+        sent every 15 s. A client that blocks a write for more than 10 s is disconnected, and at
+        most FF_SSE_MAX_CONNECTIONS streams are open at once (503 beyond).
+      parameters:
+        - name: run_id
+          in: query
+          description: Only this run's events.
+          schema: {type: string}
+        - name: types
+          in: query
+          description: Comma-separated event types to include, e.g. `task.failed,run.failed`.
+          schema: {type: string}
+        - name: since
+          in: query
+          description: Only events recorded at or after this time.
+          schema: {type: string, format: date-time}
+        - name: Last-Event-ID
+          in: header
+          description: Resume after this event id (sent automatically by EventSource on reconnect).
+          schema: {type: integer, format: int64, minimum: 0}
+      responses:
+        '200':
+          description: The event stream; it stays open until the client disconnects.
+          content:
+            text/event-stream:
+              schema: {type: string}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+        default: {$ref: '#/components/responses/Error'}
+
 components:
   securitySchemes:
     ApiKeyAuth:

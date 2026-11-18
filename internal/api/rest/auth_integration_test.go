@@ -28,7 +28,12 @@ func TestRBAC_Matrix(t *testing.T) {
 		ops++
 		need := requiredRole(acl, s.method, s.path)
 		for _, role := range auth.Roles() {
-			code := c.do(t, e.raw, s.method, s.samplePath(), nil, e.bearer(role)...).Code
+			var code int
+			if s.op.OperationID == "streamEvents" { // a 200 is an endless stream (03.07): bound it
+				code = c.doFor(t, e.raw, 200*time.Millisecond, s.method, s.samplePath(), e.bearer(role)...).Code
+			} else {
+				code = c.do(t, e.raw, s.method, s.samplePath(), nil, e.bearer(role)...).Code
+			}
 			if denied := code == http.StatusForbidden; denied == auth.Allowed(role, need) {
 				t.Errorf("%s %s as %s → %d; ACL requires %s", s.method, s.path, role, code, need)
 			}

@@ -51,8 +51,13 @@ func loadSpec(t *testing.T) *openapi3.T {
 	return doc
 }
 
+// registerStreamDecoder teaches the validator text/event-stream (03.07), once: the decoder table
+// is a kin-openapi global.
+var registerStreamDecoder sync.Once
+
 func newContract(t *testing.T) *contract {
 	t.Helper()
+	registerStreamDecoder.Do(func() { openapi3filter.RegisterBodyDecoder("text/event-stream", openapi3filter.PlainBodyDecoder) })
 	doc := loadSpec(t)
 	router, err := legacy.NewRouter(doc)
 	if err != nil {
@@ -68,6 +73,22 @@ func (c *contract) do(t *testing.T, h http.Handler, method, path string, body []
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	for i := 0; i+1 < len(headers); i += 2 {
+		req.Header.Set(headers[i], headers[i+1])
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	c.check(t, req, rec)
+	return rec
+}
+
+// doFor is do for a streaming response: the request's context ends after d, which ends the stream,
+// and the recorded part is checked.
+func (c *contract) doFor(t *testing.T, h http.Handler, d time.Duration, method, path string, headers ...string) *httptest.ResponseRecorder {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), d)
+	defer cancel()
+	req := httptest.NewRequestWithContext(ctx, method, path, nil)
 	for i := 0; i+1 < len(headers); i += 2 {
 		req.Header.Set(headers[i], headers[i+1])
 	}

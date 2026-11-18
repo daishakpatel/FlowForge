@@ -102,6 +102,19 @@ type EventRepo interface {
 	ListByRun(ctx context.Context, q Querier, runID string, afterID int64, limit int) ([]EventView, error)
 }
 
+// EventStreamRepo reads events for the SSE stream (task 03.07).
+type EventStreamRepo interface {
+	// Stream returns up to limit events with afterID < workflow_events.id <= upTo matching f,
+	// oldest first, each with its outbox envelope while that row exists.
+	Stream(ctx context.Context, q Querier, f EventStreamFilter, afterID, upTo int64, limit int) ([]EventView, error)
+	// Marks returns the next up to limit event ids after afterID, unfiltered, with their creation
+	// times, in id order. Ids are assigned at insert, so an id missing between two marks may still
+	// commit; the stream uses marks to stay behind such gaps.
+	Marks(ctx context.Context, q Querier, afterID int64, limit int) ([]EventMark, error)
+	// LastID returns the newest workflow_events.id, or 0.
+	LastID(ctx context.Context, q Querier) (int64, error)
+}
+
 // ClusterRepo reads and raises the scheduler epoch fence in cluster_state (ADR-003). Epoch 0
 // means unfenced single-scheduler mode.
 type ClusterRepo interface {

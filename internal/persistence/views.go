@@ -99,6 +99,22 @@ type EventView struct {
 	Payload       json.RawMessage
 	CorrelationID string
 	CreatedAt     time.Time
+	// Envelope is the full 00E §7 envelope from the outbox, set only by EventStreamRepo.Stream
+	// and only while the event's outbox row exists (task 03.07).
+	Envelope json.RawMessage
+}
+
+// EventMark is an event id and when its row was created (EventStreamRepo.Marks).
+type EventMark struct {
+	ID        int64
+	CreatedAt time.Time
+}
+
+// EventStreamFilter narrows EventStreamRepo.Stream. Zero values mean "no filter".
+type EventStreamFilter struct {
+	RunID string
+	Types []string // event types
+	Since time.Time
 }
 
 // APIKeyView is a stored API key. SecretHash and Salt never leave the server.

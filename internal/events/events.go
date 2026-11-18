@@ -17,6 +17,11 @@ import (
 	"github.com/daishakpatel/flowforge/internal/persistence/sqlcgen"
 )
 
+// NotifyChannel is the Postgres NOTIFY channel Record signals for every run event (task 03.07):
+// the SSE stream's shared listener wakes on it. The payload is empty; listeners re-read
+// workflow_events. Inside a transaction Postgres delivers it at commit, and not at all on rollback.
+const NotifyChannel = "ff_events"
+
 // Recorder writes events. It is safe for concurrent use when its clock and ID generator are.
 type Recorder struct {
 	clock    clock.Clock
@@ -34,7 +39,8 @@ func NewRecorder(c clock.Clock, g ids.Generator, producer string) *Recorder {
 // transaction, not a pool, because the event must commit or roll back with the state change it
 // describes (ADR-009). The outbox key is the run id, so a run's events stay ordered in Kafka;
 // cluster events use their aggregate id. correlation_id is the request id from ctx
-// (logging.WithFields) when present, else the run id.
+// (logging.WithFields) when present, else the run id. A run event also sends NOTIFY ff_events
+// (NotifyChannel) in tx, so SSE streams wake at commit.
 func (r *Recorder) Record(ctx context.Context, tx pgx.Tx, e Event) error {
 	if err := e.validate(); err != nil {
 		return err
@@ -70,6 +76,9 @@ func (r *Recorder) Record(ctx context.Context, tx pgx.Tx, e Event) error {
 		})
 		if err != nil {
 			return fmt.Errorf("insert workflow event %s: %w", e.Type, err)
+		}
+		if err := q.Notify(ctx, NotifyChannel); err != nil { // Postgres folds repeats within a tx into one
+			return fmt.Errorf("notify %s: %w", NotifyChannel, err)
 		}
 	}
 	err = q.InsertOutbox(ctx, sqlcgen.InsertOutboxParams{

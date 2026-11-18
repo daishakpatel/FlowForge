@@ -2,11 +2,18 @@ package rest
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
+	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/daishakpatel/flowforge/internal/api/sse"
+	"github.com/daishakpatel/flowforge/internal/apperrors"
 	"github.com/daishakpatel/flowforge/internal/persistence"
 	"github.com/daishakpatel/flowforge/internal/workflow/model"
 	"github.com/daishakpatel/flowforge/internal/workflow/statemachine"
@@ -155,4 +162,55 @@ func (h *handlers) listTaskAttempts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, newList(mapList(views, toAttempt), ""))
+}
+
+// streamRetryAfter is the Retry-After of a stream refused because the API is at
+// FF_SSE_MAX_CONNECTIONS.
+const streamRetryAfter = 5 * time.Second
+
+// streamEvents is GET /api/v1/events/stream (task 03.07): the SSE stream of run events, filtered
+// by run_id, types and since, resumed after the Last-Event-ID header. Bad parameters are 400 and
+// a full stream hub is 503; once streaming, the response is text/event-stream until the client
+// leaves.
+func (h *handlers) streamEvents(w http.ResponseWriter, r *http.Request) {
+	q, err := streamQuery(r)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if err := h.events.Stream(w, r, q); err != nil {
+		if errors.Is(err, sse.ErrTooManyStreams) {
+			err = apperrors.Unavailable("too many event streams are open; retry later", streamRetryAfter, err)
+		}
+		writeError(w, r, err)
+	}
+}
+
+func streamQuery(r *http.Request) (sse.Query, error) {
+	v := r.URL.Query()
+	q := sse.Query{RunID: v.Get("run_id")}
+	if types := v.Get("types"); types != "" {
+		for _, t := range strings.Split(types, ",") {
+			t = strings.TrimSpace(t)
+			if !slices.Contains(statemachine.EventTypes(), statemachine.EventType(t)) {
+				return sse.Query{}, apperrors.InvalidArgument(fmt.Sprintf("types: unknown event type %q", t))
+			}
+			q.Types = append(q.Types, t)
+		}
+	}
+	if since := v.Get("since"); since != "" {
+		t, err := time.Parse(time.RFC3339, since)
+		if err != nil {
+			return sse.Query{}, apperrors.InvalidArgument("since must be an RFC 3339 time")
+		}
+		q.Since = t
+	}
+	if last := r.Header.Get("Last-Event-ID"); last != "" {
+		id, err := strconv.ParseInt(last, 10, 64)
+		if err != nil || id < 0 {
+			return sse.Query{}, apperrors.InvalidArgument("Last-Event-ID must be a workflow event id")
+		}
+		q.LastEventID, q.Resume = id, true
+	}
+	return q, nil
 }

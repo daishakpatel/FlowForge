@@ -20,6 +20,7 @@ import (
 
 	"github.com/daishakpatel/flowforge/internal/api/auth"
 	"github.com/daishakpatel/flowforge/internal/api/service"
+	"github.com/daishakpatel/flowforge/internal/api/sse"
 	"github.com/daishakpatel/flowforge/internal/clock"
 	"github.com/daishakpatel/flowforge/internal/config"
 	"github.com/daishakpatel/flowforge/internal/events"
@@ -105,6 +106,7 @@ func newAPIEnv(t *testing.T) *apiEnv {
 	authn := auth.NewKeyAuthenticator(pool, pg.APIKeyRepo{}, clk)
 	deps.Auth, deps.DB, deps.Tx, deps.APIKeys, deps.Audit = authn, pool, runs.Tx, pg.APIKeyRepo{}, pg.AuditRepo{}
 	deps.Workers, deps.Logs, deps.WorkerLeaseTTL = pg.WorkerRepo{}, pg.TaskLogRepo{}, 15*time.Second
+	deps.Events = streamHandler(pool, sse.DefaultMaxStreams)
 	raw, err := NewRouter(deps)
 	if err != nil {
 		t.Fatal(err)
@@ -121,6 +123,15 @@ func newAPIEnv(t *testing.T) *apiEnv {
 	})
 	return e
 }
+
+// streamHandler is the SSE handler with a listener that never rings: streams poll (500 ms).
+func streamHandler(pool persistence.Querier, limit int) *sse.Handler {
+	return &sse.Handler{Hub: sse.NewHub(silentWaker{}, limit), DB: pool, Events: pg.EventRepo{}, Clock: clock.Real{}}
+}
+
+type silentWaker struct{}
+
+func (silentWaker) Wait() <-chan struct{} { return nil }
 
 func decodeBody[T any](t *testing.T, body []byte) T {
 	t.Helper()
@@ -407,6 +418,8 @@ func TestContract_API(t *testing.T) {
 	code, _, _ = do("DELETE", "/api/v1/api-keys/"+e.keyID(auth.RoleAdmin), nil)
 	want(t, code, 409, "revoke the last admin key")
 
+	streamContract(t, e, c, r)
+
 	// Every /api/v1 operation: 401 without a key, 403 for a worker key (no human route allows
 	// it), 429 once the key's bucket is empty.
 	limited := e.routerWith(t, func(d *Deps) { d.RateLimitRPS = 0.001 })
@@ -611,5 +624,32 @@ func rerunContract(t *testing.T, e *apiEnv, do func(string, string, []byte, ...s
 	want(t, code, 200, "retry a failed run")
 	if r := decodeBody[rerunResponse](t, body); r.Run.Status != "RUNNING" || len(r.TaskIDs) != 1 {
 		t.Errorf("retry answered %+v", r)
+	}
+}
+
+// streamContract produces every documented status of streamEvents (03.07). A 200 is a stream, so
+// it is served until a short deadline and the part received is checked.
+func streamContract(t *testing.T, e *apiEnv, c *contract, r http.Handler) {
+	t.Helper()
+	runs, _, err := e.runs.List(t.Context(), persistence.RunFilter{}, persistence.Page{Limit: 1})
+	if err != nil || len(runs) == 0 {
+		t.Fatalf("a run is needed: %v", err)
+	}
+	rec := c.doFor(t, r, 700*time.Millisecond, "GET", "/api/v1/events/stream?run_id="+runs[0].ID+"&types=run.created")
+	want(t, rec.Code, 200, "event stream")
+	if body := rec.Body.String(); rec.Header().Get("Content-Type") != "text/event-stream" || !strings.Contains(body, "event: run.created\ndata: {") {
+		t.Errorf("stream: content type %q, body %q", rec.Header().Get("Content-Type"), body)
+	}
+	for _, bad := range []struct{ query, header string }{{"types=run.bogus", ""}, {"since=yesterday", ""}, {"", "x"}} {
+		var h []string
+		if bad.header != "" {
+			h = []string{"Last-Event-ID", bad.header}
+		}
+		want(t, c.do(t, r, "GET", "/api/v1/events/stream?"+bad.query, nil, h...).Code, 400, "stream "+bad.query+bad.header)
+	}
+	full := e.routerWith(t, func(d *Deps) { d.Events = streamHandler(e.pool, 0) })
+	rec = c.do(t, full, "GET", "/api/v1/events/stream", nil, e.bearer(auth.RoleViewer)...)
+	if rec.Code != 503 || rec.Header().Get("Retry-After") == "" {
+		t.Errorf("stream over the limit: %d (Retry-After %q); want 503 with Retry-After", rec.Code, rec.Header().Get("Retry-After"))
 	}
 }

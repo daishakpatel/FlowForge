@@ -15,6 +15,7 @@ import (
 
 	"github.com/daishakpatel/flowforge/internal/api/auth"
 	"github.com/daishakpatel/flowforge/internal/api/service"
+	"github.com/daishakpatel/flowforge/internal/api/sse"
 	"github.com/daishakpatel/flowforge/internal/apperrors"
 	"github.com/daishakpatel/flowforge/internal/clock"
 	"github.com/daishakpatel/flowforge/internal/ids"
@@ -45,6 +46,9 @@ type Deps struct {
 	Workers        persistence.WorkerRepo
 	Logs           persistence.TaskLogRepo
 	WorkerLeaseTTL time.Duration // FF_WORKER_LEASE_TTL; older ACTIVE workers are reported LOST
+
+	// Task 03.07: the SSE stream GET /api/v1/events/stream.
+	Events *sse.Handler
 }
 
 type handlers struct {
@@ -58,6 +62,7 @@ type handlers struct {
 	workers   persistence.WorkerRepo
 	logs      persistence.TaskLogRepo
 	leaseTTL  time.Duration
+	events    *sse.Handler
 }
 
 // NewRouter builds the API router. Every request passes RequestID → Recover → Logging →
@@ -75,7 +80,7 @@ func NewRouter(d Deps) (chi.Router, error) {
 		return nil, err
 	}
 	h := &handlers{workflows: d.Workflows, runs: d.Runs, db: d.DB, tx: d.Tx, keys: d.APIKeys, auth: d.Auth, clock: d.Clock,
-		workers: d.Workers, logs: d.Logs, leaseTTL: d.WorkerLeaseTTL}
+		workers: d.Workers, logs: d.Logs, leaseTTL: d.WorkerLeaseTTL, events: d.Events}
 	acl := routeACL()
 	lim := newLimiter(d.Clock, d.RateLimitRPS, 2*d.RateLimitRPS)
 
@@ -118,6 +123,7 @@ func NewRouter(d Deps) (chi.Router, error) {
 			r.Delete("/api-keys/{key_id}", h.revokeAPIKey)
 			r.Get("/workers", h.listWorkers)
 			r.Get("/attempts/{attempt_id}/logs", h.listAttemptLogs)
+			r.Get("/events/stream", h.streamEvents)
 		})
 	})
 	return r, nil
