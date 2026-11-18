@@ -64,10 +64,16 @@ Defaults are dev-only. "—" means there is no default.
 | `FF_AUTH_DISABLED` | `false` | oneof `true false`; `true` rejected when `FF_ENV=prod` | `API` |
 | `FF_CANCEL_GRACE` | `30s` | positive; how long workers get to stop a cancelled run's RUNNING attempts before they are force-cancelled ([run control](architecture/run-control.md)) | `API` |
 | `FF_API_RATE_LIMIT_RPS` | `50` | positive; per API key, burst 2×, service roles 4× | `API` |
+| `FF_SSE_MAX_CONNECTIONS` | `200` | positive; open event streams beyond this get 503 ([events](architecture/events.md)) | `API` |
 | `FF_RAFT_ENDPOINTS` | `raft-1:7000,raft-2:7000,raft-3:7000` | addr (each) | `API`, `Scheduler` |
 | `FF_SCHED_HTTP_ADDR` | `:8081` | addr; serves `/metrics`, `/healthz`, `/readyz` | `Scheduler` |
 | `FF_SCHED_TICK` | `500ms` | positive | `Scheduler` |
 | `FF_QUEUE_LIMITS` | — (unlimited) | queue_limits: `queue=n` items, n > 0; caps QUEUED+RUNNING tasks per queue across runs | `Scheduler` |
+| `FF_EVENT_PUBLISHER` | `log` | oneof `log kafka none`; the outbox relay's publisher (`kafka` from task 05.01) ([events](architecture/events.md)) | `Scheduler` |
+| `FF_RETENTION_OUTBOX` | `72h` | positive; published outbox rows are deleted after this | `Scheduler` |
+| `FF_RETENTION_EVENTS` | `720h` | positive; workflow events (run history) are deleted after this | `Scheduler` |
+| `FF_RETENTION_TASK_LOGS` | `336h` | positive; task log lines are deleted after this | `Scheduler` |
+| `FF_RETENTION_IDEMPOTENCY` | `24h` | positive; a run's `Idempotency-Key` is cleared after this | `Scheduler` |
 | `FF_LEADER_TTL` | `10s` | positive | `Scheduler` |
 | `FF_LEADER_RENEW` | `3s` | positive, < TTL/2 | `Scheduler` |
 | `FF_KAFKA_BROKERS` | `localhost:9092` | addr (each) | `Scheduler` (outbox relay), `Worker`, `Processor` |

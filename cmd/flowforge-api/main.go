@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -28,6 +29,7 @@ import (
 	"github.com/daishakpatel/flowforge/internal/api/auth"
 	"github.com/daishakpatel/flowforge/internal/api/rest"
 	"github.com/daishakpatel/flowforge/internal/api/service"
+	"github.com/daishakpatel/flowforge/internal/api/sse"
 	"github.com/daishakpatel/flowforge/internal/clock"
 	"github.com/daishakpatel/flowforge/internal/config"
 	"github.com/daishakpatel/flowforge/internal/events"
@@ -101,6 +103,11 @@ func run(ctx context.Context, opts config.Options, logOut io.Writer, listen func
 	txm := pg.NewTxManager(pool, clock.Real{}, rng)
 	reg := obs.NewRegistry()
 	runRepo := pg.NewRunRepo(gen, rec)
+	// One LISTEN ff_events connection wakes every SSE stream (task 03.07).
+	eventsWaker := workerapi.NewChannelWaker(func(ctx context.Context) (*pgx.Conn, error) {
+		return pgx.Connect(ctx, cfg.PGDSN.Reveal())
+	}, clock.Real{}, events.NotifyChannel)
+	streams := sse.NewHub(eventsWaker, cfg.SSEMaxConnections)
 	router, err := rest.NewRouter(rest.Deps{
 		Workflows: &service.WorkflowService{DB: pool, DefRepo: defs},
 		Runs: &service.RunService{
@@ -113,6 +120,7 @@ func run(ctx context.Context, opts config.Options, logOut io.Writer, listen func
 		Metrics: reg,
 		DB:      pool, Tx: txm, APIKeys: keys, Audit: pg.AuditRepo{}, RateLimitRPS: float64(cfg.RateLimitRPS),
 		Workers: pg.WorkerRepo{}, Logs: pg.TaskLogRepo{}, WorkerLeaseTTL: cfg.WorkerLeaseTTL,
+		Events: &sse.Handler{Hub: streams, DB: pool, Events: pg.EventRepo{}, Clock: clock.Real{}},
 		Ready: func(ctx context.Context) error {
 			if err := pool.Ping(ctx); err != nil {
 				return err
@@ -137,7 +145,11 @@ func run(ctx context.Context, opts config.Options, logOut io.Writer, listen func
 	grpcDone, wakerDone := make(chan error, 1), make(chan struct{})
 	go func() {
 		defer close(wakerDone)
-		_ = waker.Run(ctx) // returns nil once ctx is done; it logs its own reconnects
+		var wg sync.WaitGroup
+		// Both return nil once ctx is done; they log their own reconnects.
+		wg.Go(func() { _ = waker.Run(ctx) })
+		wg.Go(func() { _ = eventsWaker.Run(ctx) })
+		wg.Wait()
 	}()
 	go func() {
 		err := grpcSrv.Serve(gln)
@@ -157,6 +169,7 @@ func run(ctx context.Context, opts config.Options, logOut io.Writer, listen func
 		WriteTimeout:      rest.RequestTimeout + 5*time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
+	srv.RegisterOnShutdown(streams.Close) // Shutdown does not cancel open event streams; Close ends them
 	logger.Info("listening", "addr", ln.Addr().String())
 	err = serve(ctx, srv, ln, shutdownTimeout)
 	stopGRPC(grpcSrv, shutdownTimeout)

@@ -22,6 +22,15 @@ type Scheduler struct {
 	LeaderTTL       time.Duration `env:"FF_LEADER_TTL" default:"10s" validate:"positive"`
 	LeaderRenew     time.Duration `env:"FF_LEADER_RENEW" default:"3s" validate:"positive"`
 	KafkaBrokers    []string      `env:"FF_KAFKA_BROKERS" default:"localhost:9092" validate:"addr"` // outbox relay
+	// EventPublisher is where the outbox relay publishes events (task 03.07): log (debug log
+	// lines), none (discard), or kafka (task 05.01).
+	EventPublisher string `env:"FF_EVENT_PUBLISHER" default:"log" validate:"oneof=log kafka none"`
+	// Retention (task 03.07): how long published outbox rows, workflow events and task log lines
+	// are kept, and how long a run's Idempotency-Key is honoured.
+	RetentionOutbox      time.Duration `env:"FF_RETENTION_OUTBOX" default:"72h" validate:"positive"`
+	RetentionEvents      time.Duration `env:"FF_RETENTION_EVENTS" default:"720h" validate:"positive"`
+	RetentionTaskLogs    time.Duration `env:"FF_RETENTION_TASK_LOGS" default:"336h" validate:"positive"`
+	RetentionIdempotency time.Duration `env:"FF_RETENTION_IDEMPOTENCY" default:"24h" validate:"positive"`
 }
 
 // QueueLimitMap returns FF_QUEUE_LIMITS as queue → the most QUEUED+RUNNING tasks that queue may

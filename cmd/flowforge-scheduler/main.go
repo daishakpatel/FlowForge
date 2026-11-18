@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/rand/v2"
 	"net"
 	"net/http"
@@ -24,6 +25,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/daishakpatel/flowforge/internal/clock"
 	"github.com/daishakpatel/flowforge/internal/config"
@@ -31,10 +34,12 @@ import (
 	"github.com/daishakpatel/flowforge/internal/ids"
 	"github.com/daishakpatel/flowforge/internal/logging"
 	"github.com/daishakpatel/flowforge/internal/obs"
+	"github.com/daishakpatel/flowforge/internal/outbox"
 	"github.com/daishakpatel/flowforge/internal/persistence"
 	"github.com/daishakpatel/flowforge/internal/persistence/migrate"
 	"github.com/daishakpatel/flowforge/internal/persistence/pg"
 	"github.com/daishakpatel/flowforge/internal/recovery"
+	"github.com/daishakpatel/flowforge/internal/retention"
 	"github.com/daishakpatel/flowforge/internal/scheduler"
 	"github.com/daishakpatel/flowforge/internal/version"
 	"github.com/daishakpatel/flowforge/internal/workerapi"
@@ -118,6 +123,9 @@ func run(ctx context.Context, opts config.Options, logOut io.Writer, listen func
 		Ender:  ender, Notify: pg.SchedulerRepo{}, Events: rec, Clock: clock.Real{}, Tick: 2 * time.Second,
 		LeaseTTL: cfg.WorkerLeaseTTL, Heartbeat: cfg.WorkerHeartbeat, Errors: loopErrors,
 	})
+	if err := registerEventLoops(runner, cfg, reg, logger, pool, txm, loopErrors); err != nil {
+		return err
+	}
 
 	ln, err := listen(ctx, "tcp", cfg.HTTPAddr)
 	if err != nil {
@@ -161,4 +169,46 @@ func shutdown(ctx context.Context, srv *http.Server, served <-chan error) error 
 		return fmt.Errorf("http server: %w", err)
 	}
 	return nil
+}
+
+// registerEventLoops adds the outbox relay and the retention loop (task 03.07).
+func registerEventLoops(runner *scheduler.Runner, cfg config.Scheduler, reg *obs.Registry, logger *slog.Logger,
+	pool *pgxpool.Pool, txm *pg.TxManager, loopErrors *prometheus.CounterVec) error {
+	publisher, err := newPublisher(cfg.EventPublisher, logger)
+	if err != nil {
+		return err
+	}
+	if cfg.EventPublisher != "kafka" {
+		logger.Warn("workflow events are not published outside FlowForge: the outbox relay marks them published "+
+			"without sending them anywhere (Kafka arrives with task 05.01)", "FF_EVENT_PUBLISHER", cfg.EventPublisher)
+	}
+	relayMetrics, err := outbox.NewMetrics(reg)
+	if err != nil {
+		return err
+	}
+	deleted, err := retention.NewDeletedRows(reg)
+	if err != nil {
+		return err
+	}
+	runner.RegisterLoop(&outbox.RelayLoop{
+		DB: pool, Tx: txm, Cluster: pg.ClusterRepo{}, Outbox: pg.OutboxRepo{}, Publisher: publisher,
+		Clock: clock.Real{}, Tick: cfg.Tick, Metrics: relayMetrics, Errors: loopErrors,
+	})
+	runner.RegisterLoop(&retention.Loop{
+		DB: pool, Repo: pg.RetentionRepo{}, Clock: clock.Real{}, Deleted: deleted, Errors: loopErrors,
+		Policy: retention.Policy{Outbox: cfg.RetentionOutbox, Events: cfg.RetentionEvents,
+			TaskLogs: cfg.RetentionTaskLogs, IdempotencyKeys: cfg.RetentionIdempotency},
+	})
+	return nil
+}
+
+// newPublisher returns the outbox publisher FF_EVENT_PUBLISHER names.
+func newPublisher(kind string, logger *slog.Logger) (outbox.Publisher, error) {
+	switch kind {
+	case "log":
+		return outbox.LogPublisher{Logger: logger}, nil
+	case "none":
+		return outbox.DiscardPublisher{}, nil
+	}
+	return nil, fmt.Errorf("FF_EVENT_PUBLISHER=%s: the Kafka publisher arrives with task 05.01; use log or none", kind)
 }

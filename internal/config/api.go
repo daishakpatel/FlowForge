@@ -22,6 +22,9 @@ type API struct {
 	// RateLimitRPS is each API key's sustained request rate (task 02.05); the burst is twice
 	// that, and the service roles (worker, ai-readonly) get four times both.
 	RateLimitRPS int `env:"FF_API_RATE_LIMIT_RPS" default:"50" validate:"positive"`
+	// SSEMaxConnections caps open GET /api/v1/events/stream streams; more are refused with 503
+	// (task 03.07).
+	SSEMaxConnections int `env:"FF_SSE_MAX_CONNECTIONS" default:"200" validate:"positive"`
 }
 
 // Redacted returns every variable with secrets masked, for the startup log.
