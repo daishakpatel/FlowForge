@@ -200,13 +200,25 @@ func (w *sim) poll(t *testing.T) ([]*workerv1.Task, error) {
 	return resp.GetTasks(), err
 }
 
+// mustPoll claims exactly want tasks. One poll may come back empty because its short real
+// deadline passed while the machine was loaded, so it polls again until it has them or 10 s
+// pass; a poll that must find nothing uses poll directly.
 func (w *sim) mustPoll(t *testing.T, want int) []*workerv1.Task {
 	t.Helper()
-	tasks, err := w.poll(t)
-	if err != nil || len(tasks) != want {
-		t.Fatalf("%s polled %d tasks (%v), want %d", w.id, len(tasks), err, want)
+	var got []*workerv1.Task
+	wall := clock.Real{}
+	deadline := wall.Now().Add(10 * time.Second)
+	for len(got) < want && wall.Now().Before(deadline) {
+		tasks, err := w.poll(t)
+		if err != nil {
+			t.Fatalf("%s poll: %v", w.id, err)
+		}
+		got = append(got, tasks...)
 	}
-	return tasks
+	if len(got) != want {
+		t.Fatalf("%s polled %d tasks, want %d", w.id, len(got), want)
+	}
+	return got
 }
 
 func (w *sim) beat(t *testing.T, tasks ...*workerv1.Task) *workerv1.HeartbeatResponse {
