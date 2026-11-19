@@ -214,6 +214,32 @@ func TestWorkerLoss_FallbackForWorkersWithoutLease(t *testing.T) {
 	testutil.AssertInvariants(t, e.srv.Pool)
 }
 
+// TestWorkerLoss_FallbackForRestartedWorker: a worker restarted under the same id holds a live
+// lease again, but its previous incarnation's attempt gets no heartbeats; the attempt is abandoned
+// once silent for 3×heartbeat + lease TTL, and the new incarnation keeps its lease (found by the
+// 03.09 e2e suite: before, the attempt stayed RUNNING until its deadline).
+func TestWorkerLoss_FallbackForRestartedWorker(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t)
+	w := e.worker(t, "w-back")
+	_, ids := e.startRun(t, taskJSON("a", 2, 1000, 1000, 600))
+	once(t, e.decide)
+	w.mustPoll(t, 1)
+	w = e.worker(t, "w-back") // the process restarted: it registers again and runs nothing
+	for silent := time.Duration(0); silent <= 3*heartbeat+leaseTTL; silent += heartbeat {
+		e.clock.Advance(heartbeat)
+		w.beat(t)
+		once(t, e.recov)
+	}
+	if a, _ := e.srv.Attempt(t, ids["a"]); a.Status != model.AttemptAbandoned || e.task(t, ids["a"]).Status != model.TaskRetryWait {
+		t.Fatalf("previous incarnation's attempt %s, task %s; want ABANDONED and RETRY_WAIT", a.Status, e.task(t, ids["a"]).Status)
+	}
+	if s := e.srv.Scalar(t, `SELECT status FROM worker_observations WHERE worker_id = 'w-back'`); s != "ACTIVE" {
+		t.Errorf("worker status %s; the live incarnation keeps its lease", s)
+	}
+	testutil.AssertInvariants(t, e.srv.Pool)
+}
+
 // TestLoops_SurviveDatabaseOutage: with the scheduler's database connection cut for about 5 s,
 // every loop backs off and counts its failures without stopping or panicking; once the database
 // is back they resume and the run completes.

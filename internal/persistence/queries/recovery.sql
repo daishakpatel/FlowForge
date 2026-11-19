@@ -17,12 +17,13 @@ ORDER BY started_at
 LIMIT @lim;
 
 -- name: ListOrphanedAttempts :many
--- RUNNING attempts whose worker holds no lease (not in alive) and that showed no sign of life
--- since before: the heartbeat-staleness fallback. It scans the RUNNING attempts through the
--- partial index ix_attempts_running, bounded by how much work is in flight.
+-- RUNNING attempts that showed no sign of life since before: the heartbeat-staleness fallback.
+-- A live worker heartbeats every attempt it runs, so a silent attempt is one no live process
+-- knows about, even when its worker id holds a lease (a worker restarted under the same id, a
+-- lost PollTask answer). It scans the RUNNING attempts through the partial index
+-- ix_attempts_running, bounded by how much work is in flight.
 SELECT * FROM task_attempts
 WHERE status = 'RUNNING'
-  AND NOT (COALESCE(worker_id, '') = ANY(@alive::text[]))
   AND COALESCE(last_heartbeat_at, started_at) < @before
 ORDER BY started_at
 LIMIT @lim;

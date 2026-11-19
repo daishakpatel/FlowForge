@@ -15,8 +15,9 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
-// pgImage matches the `postgres` service in docker-compose.yml; update both together.
-const pgImage = "pgvector/pgvector:0.8.7-pg16"
+// PGImage matches the `postgres` service in docker-compose.yml; update both together. test/e2e
+// starts its own container of it.
+const PGImage = "pgvector/pgvector:0.8.7-pg16"
 
 // requireDockerEnv makes a missing Docker fail the test instead of skipping it (CI sets it).
 const requireDockerEnv = "FF_TEST_REQUIRE_DOCKER"
@@ -46,7 +47,7 @@ type server struct {
 	adminDSN string // set once the server is reachable
 }
 
-var pgServer = &server{name: "postgres", image: pgImage, dsnEnv: "FF_TEST_PG_DSN", user: "postgres", password: "postgres"}
+var pgServer = &server{name: "postgres", image: PGImage, dsnEnv: "FF_TEST_PG_DSN", user: "postgres", password: "postgres"}
 
 // NewPostgres returns a fresh, empty database on the pgvector Postgres server (the `flowforge` and
 // `aiops` server in Compose). It skips or fails the test if no server is available; see the package

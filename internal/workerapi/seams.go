@@ -68,7 +68,8 @@ func (h TerminalOutcomeHandler) OnAttemptFinished(ctx context.Context, tx pgx.Tx
 
 // LeaseProvider tracks which workers are alive (seam, task 03.01). The default PGLeaseProvider
 // uses worker_observations.last_seen_at; 04.x replaces it with Raft-backed leases, the liveness
-// authority (ADR-003). Expired and Alive are what recovery (03.04) acts on.
+// authority (ADR-003). Expired is what recovery (03.04) acts on; its fallback for silent attempts
+// reads attempt heartbeats, not leases (03.09).
 type LeaseProvider interface {
 	// Register starts or refreshes a worker's lease. A live lease of the same id held by another
 	// API key is CONFLICT.

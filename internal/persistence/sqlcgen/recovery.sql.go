@@ -14,23 +14,23 @@ import (
 const listOrphanedAttempts = `-- name: ListOrphanedAttempts :many
 SELECT id, task_id, attempt_number, worker_id, status, fencing_token, idempotency_key, started_at, deadline_at, last_heartbeat_at, finished_at, error_code, error_message, retryable, result FROM task_attempts
 WHERE status = 'RUNNING'
-  AND NOT (COALESCE(worker_id, '') = ANY($1::text[]))
-  AND COALESCE(last_heartbeat_at, started_at) < $2
+  AND COALESCE(last_heartbeat_at, started_at) < $1
 ORDER BY started_at
-LIMIT $3
+LIMIT $2
 `
 
 type ListOrphanedAttemptsParams struct {
-	Alive  []string
 	Before pgtype.Timestamptz
 	Lim    int32
 }
 
-// RUNNING attempts whose worker holds no lease (not in alive) and that showed no sign of life
-// since before: the heartbeat-staleness fallback. It scans the RUNNING attempts through the
-// partial index ix_attempts_running, bounded by how much work is in flight.
+// RUNNING attempts that showed no sign of life since before: the heartbeat-staleness fallback.
+// A live worker heartbeats every attempt it runs, so a silent attempt is one no live process
+// knows about, even when its worker id holds a lease (a worker restarted under the same id, a
+// lost PollTask answer). It scans the RUNNING attempts through the partial index
+// ix_attempts_running, bounded by how much work is in flight.
 func (q *Queries) ListOrphanedAttempts(ctx context.Context, arg ListOrphanedAttemptsParams) ([]TaskAttempt, error) {
-	rows, err := q.db.Query(ctx, listOrphanedAttempts, arg.Alive, arg.Before, arg.Lim)
+	rows, err := q.db.Query(ctx, listOrphanedAttempts, arg.Before, arg.Lim)
 	if err != nil {
 		return nil, err
 	}

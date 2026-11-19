@@ -168,9 +168,9 @@ type RecoveryRepo interface {
 	OverdueAttempts(ctx context.Context, q Querier, now time.Time, limit int) ([]AttemptView, error)
 	// RunningAttemptsOf returns up to limit RUNNING attempts of workerID.
 	RunningAttemptsOf(ctx context.Context, q Querier, workerID string, limit int) ([]AttemptView, error)
-	// OrphanedAttempts returns up to limit RUNNING attempts whose worker is not in alive and whose
-	// last heartbeat (or start) is before before.
-	OrphanedAttempts(ctx context.Context, q Querier, alive []string, before time.Time, limit int) ([]AttemptView, error)
+	// OrphanedAttempts returns up to limit RUNNING attempts whose last heartbeat (or start) is
+	// before before, whatever their worker's lease.
+	OrphanedAttempts(ctx context.Context, q Querier, before time.Time, limit int) ([]AttemptView, error)
 	// MarkWorkerLost marks workerID LOST if it is still ACTIVE and unseen since before, and
 	// reports whether it did.
 	MarkWorkerLost(ctx context.Context, q Querier, workerID string, before time.Time) (bool, error)

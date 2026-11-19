@@ -33,11 +33,8 @@ func (RecoveryRepo) RunningAttemptsOf(ctx context.Context, q persistence.Querier
 }
 
 // OrphanedAttempts implements persistence.RecoveryRepo.
-func (RecoveryRepo) OrphanedAttempts(ctx context.Context, q persistence.Querier, alive []string, before time.Time, limit int) ([]persistence.AttemptView, error) {
-	if alive == nil {
-		alive = []string{} // NOT (x = ANY('{}')) is true; a NULL array would match nothing
-	}
-	rows, err := sqlcgen.New(q).ListOrphanedAttempts(ctx, sqlcgen.ListOrphanedAttemptsParams{Alive: alive, Before: timestamptz(before), Lim: limitOf(limit)})
+func (RecoveryRepo) OrphanedAttempts(ctx context.Context, q persistence.Querier, before time.Time, limit int) ([]persistence.AttemptView, error) {
+	rows, err := sqlcgen.New(q).ListOrphanedAttempts(ctx, sqlcgen.ListOrphanedAttemptsParams{Before: timestamptz(before), Lim: limitOf(limit)})
 	if err != nil {
 		return nil, fmt.Errorf("list orphaned attempts: %w", err)
 	}

@@ -15,8 +15,8 @@ type Scheduler struct {
 	Tick          time.Duration `env:"FF_SCHED_TICK" default:"500ms" validate:"positive"`
 	QueueLimits   []string      `env:"FF_QUEUE_LIMITS" default:"" validate:"queue_limits"` // queue=n,…; see QueueLimitMap
 	// WorkerLeaseTTL and WorkerHeartbeat are the workers' settings, which worker-loss recovery
-	// (03.04) uses: a lease expires after the TTL, and an attempt with no lease is abandoned
-	// after 3×heartbeat + TTL of silence.
+	// (03.04) uses: a lease expires after the TTL, and an attempt with no heartbeat for
+	// 3×heartbeat + TTL is abandoned.
 	WorkerLeaseTTL  time.Duration `env:"FF_WORKER_LEASE_TTL" default:"15s" validate:"positive"`
 	WorkerHeartbeat time.Duration `env:"FF_WORKER_HEARTBEAT" default:"5s" validate:"positive"`
 	LeaderTTL       time.Duration `env:"FF_LEADER_TTL" default:"10s" validate:"positive"`
