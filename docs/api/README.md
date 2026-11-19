@@ -28,6 +28,8 @@ Every `/api/v1` route needs an API key: `Authorization: Bearer ff_<keyid>_<secre
 
 Key management, roles, rate limits and the audit log are covered in [`authentication.md`](authentication.md).
 
+The command-line client, `flowforgectl`, is covered in [`cli.md`](cli.md).
+
 ## Requests and limits
 
 | Limit | Value | Error |

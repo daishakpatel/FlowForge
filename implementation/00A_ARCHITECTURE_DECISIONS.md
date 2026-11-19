@@ -269,3 +269,11 @@ Format: Context → Decision → Alternatives considered → Consequences.
   - **Compatible:** a config key, a metric, endpoints already listed in `00E` §9, and a failpoint (`cron/after-start-before-advance`). No schema change; `cron_triggers` is from 0004.
   - **Changed tests:** the contract harness's sample path gains `{trigger_id}`.
   - **Tested by:** `TestNextFire`, `TestParse_Rejects`, `TestLoop_*`, `TestCronPG_*` (including the failpoint crash test) and `TestContract_API`.
+
+### ADR-007 amendment — 03.09 — 2026-11-18
+- **What:** recovery's staleness fallback (`ListOrphanedAttempts`) abandons any `RUNNING` attempt silent for 3×`FF_WORKER_HEARTBEAT` + `FF_WORKER_LEASE_TTL`, whatever its worker's lease. Before, it skipped attempts whose `worker_id` held a live lease. `RecoveryRepo.OrphanedAttempts` loses its `alive` parameter.
+- **Why:** the 03.09 e2e suite found that a worker killed and restarted under the same id re-registers within its lease. The dead incarnation's attempts then belonged to a "live" worker. The lease never expired, so they stayed `RUNNING` until their deadline, which is an hour by default. A lost PollTask answer leaves the same gap. A live worker heartbeats every attempt it runs, so silence alone means no live process knows the attempt. That makes the lease check redundant for live work and wrong for these cases.
+- **Impact:**
+  - Compatible: no schema, API or configuration change, and the bound is unchanged.
+  - A worker that is alive but cannot heartbeat for the bound loses its attempts, as it already did through lease expiry, which is shorter.
+  - Tested by `TestWorkerLoss_FallbackForRestartedWorker` (it failed before the fix: the attempt stayed `RUNNING`), the other `TestWorkerLoss_*` tests, and the e2e scenarios `TestWorkerRestartedWithSameID` and `TestSoakChaos`.
