@@ -28,9 +28,10 @@ const batch = 200
 //
 //  1. asks the LeaseProvider which workers' leases expired, abandons each one's RUNNING attempts
 //     and then marks it LOST (event worker.lost);
-//  2. as a fallback, abandons RUNNING attempts whose worker holds no lease (unknown,
-//     deregistered or already LOST) and that showed no sign of life for
-//     3×Heartbeat + LeaseTTL: work left behind by a crash or a cut-off shutdown.
+//  2. as a fallback, abandons RUNNING attempts that showed no sign of life for
+//     3×Heartbeat + LeaseTTL, whatever their worker's lease: work left behind by a crash, a
+//     cut-off shutdown, or a worker restarted under the same id (a live worker heartbeats every
+//     attempt it runs; 03.09).
 //
 // Every decision is its own transaction that asserts the epoch first (ADR-003); abandoning an
 // attempt that already ended is a no-op, so passes can repeat after any crash.
@@ -78,16 +79,8 @@ func (l *Loop) Once(ctx context.Context, gate scheduler.Gate) error {
 			}
 		}
 	}
-	alive, err := l.Leases.Alive(ctx)
-	if err != nil {
-		return fmt.Errorf("list live workers: %w", err)
-	}
-	ids := make([]string, len(alive))
-	for i, w := range alive {
-		ids[i] = w.WorkerID
-	}
 	before := l.Clock.Now().Add(-(3*l.Heartbeat + l.LeaseTTL))
-	orphans, err := l.Recovery.OrphanedAttempts(ctx, l.DB, ids, before, batch)
+	orphans, err := l.Recovery.OrphanedAttempts(ctx, l.DB, before, batch)
 	if err != nil {
 		return fmt.Errorf("list orphaned attempts: %w", err)
 	}

@@ -94,6 +94,7 @@ func newEnv(t *testing.T, change ...func(*Service)) *env {
 	ctx, cancel := context.WithCancel(context.Background())
 	served, listened := make(chan struct{}), make(chan struct{})
 	go func() { defer close(served); _ = srv.Serve(lis) }()
+	listening := waker.Wait() // closed by the broadcast that follows a successful LISTEN
 	go func() { defer close(listened); _ = waker.Run(ctx) }()
 	conn, err := grpc.NewClient("passthrough:///bufnet",
 		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return lis.DialContext(ctx) }),
@@ -108,6 +109,14 @@ func newEnv(t *testing.T, change ...func(*Service)) *env {
 		<-served
 		<-listened
 	})
+	// A NOTIFY sent before LISTEN is established is dropped by Postgres; production pollers then
+	// fall back to their 1 s re-check, but latency tests must not race the listener's startup.
+	// Waiting after the cleanup is registered, so a timeout still stops the server.
+	select {
+	case <-listening:
+	case <-time.After(10 * time.Second): //nolint:forbidigo // real-time bound on a real connection
+		t.Fatal("the NOTIFY listener did not connect within 10 s")
+	}
 	e.client = workerv1.NewWorkerServiceClient(conn)
 	return e
 }

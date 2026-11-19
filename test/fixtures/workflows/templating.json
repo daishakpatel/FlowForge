@@ -1,0 +1,8 @@
+{
+  "name": "templating", "on_failure": "fail",
+  "tasks": [
+    {"id": "fetch", "type": "noop", "config": {"symbol": "${run.input.symbol}", "window": "${run.input.window}"}},
+    {"id": "label", "type": "noop", "depends_on": ["fetch"], "config": {"text": "quote ${tasks.fetch.result.symbol}", "window": "${tasks.fetch.result.window}"}},
+    {"id": "report", "type": "echo", "depends_on": ["label"], "config": {"headline": "${tasks.label.result.text}", "window": "${tasks.label.result.window}", "status": "${tasks.fetch.status}"}}
+  ]
+}
