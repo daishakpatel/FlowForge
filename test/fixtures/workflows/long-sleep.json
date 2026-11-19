@@ -1,0 +1,7 @@
+{
+  "name": "long-sleep", "on_failure": "fail",
+  "tasks": [
+    {"id": "long", "type": "sleep", "config": {"duration_ms": 60000}},
+    {"id": "after", "type": "echo", "depends_on": ["long"]}
+  ]
+}

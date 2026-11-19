@@ -1,0 +1,15 @@
+{
+  "name": "fanout", "on_failure": "fail",
+  "tasks": [
+    {"id": "root", "type": "noop"},
+    {"id": "p1", "type": "sleep", "depends_on": ["root"], "config": {"duration_ms": 400}},
+    {"id": "p2", "type": "sleep", "depends_on": ["root"], "config": {"duration_ms": 400}},
+    {"id": "p3", "type": "sleep", "depends_on": ["root"], "config": {"duration_ms": 400}},
+    {"id": "p4", "type": "sleep", "depends_on": ["root"], "config": {"duration_ms": 400}},
+    {"id": "p5", "type": "sleep", "depends_on": ["root"], "config": {"duration_ms": 400}},
+    {"id": "p6", "type": "sleep", "depends_on": ["root"], "config": {"duration_ms": 400}},
+    {"id": "p7", "type": "sleep", "depends_on": ["root"], "config": {"duration_ms": 400}},
+    {"id": "p8", "type": "sleep", "depends_on": ["root"], "config": {"duration_ms": 400}},
+    {"id": "join", "type": "noop", "depends_on": ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"]}
+  ]
+}

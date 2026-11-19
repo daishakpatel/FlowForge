@@ -1,0 +1,9 @@
+{
+  "name": "diamond", "on_failure": "fail",
+  "tasks": [
+    {"id": "a", "type": "echo", "config": {"step": "a"}},
+    {"id": "b", "type": "sleep", "depends_on": ["a"], "config": {"duration_ms": 800}},
+    {"id": "c", "type": "sleep", "depends_on": ["a"], "config": {"duration_ms": 800}},
+    {"id": "d", "type": "echo", "depends_on": ["b", "c"], "config": {"b_slept": "${tasks.b.result.slept_ms}", "c_status": "${tasks.c.status}"}}
+  ]
+}

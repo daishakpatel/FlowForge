@@ -1,0 +1,11 @@
+{
+  "name": "soak", "on_failure": "fail",
+  "tasks": [
+    {"id": "a", "type": "sleep", "timeout_seconds": 30, "config": {"duration_ms": 300}, "retry": {"max_attempts": 10, "strategy": "fixed", "initial_delay_ms": 100, "max_delay_ms": 100}},
+    {"id": "b", "type": "sleep", "depends_on": ["a"], "timeout_seconds": 30, "config": {"duration_ms": 1500}, "retry": {"max_attempts": 10, "strategy": "fixed", "initial_delay_ms": 100, "max_delay_ms": 100}},
+    {"id": "c", "type": "echo", "depends_on": ["a"], "timeout_seconds": 30, "config": {"i": "${run.input.i}"}, "retry": {"max_attempts": 10, "strategy": "fixed", "initial_delay_ms": 100, "max_delay_ms": 100}},
+    {"id": "d", "type": "sleep", "depends_on": ["a"], "timeout_seconds": 30, "config": {"duration_ms": 1200}, "retry": {"max_attempts": 10, "strategy": "fixed", "initial_delay_ms": 100, "max_delay_ms": 100}},
+    {"id": "e", "type": "sleep", "depends_on": ["b", "c", "d"], "timeout_seconds": 30, "config": {"duration_ms": 300}, "retry": {"max_attempts": 10, "strategy": "fixed", "initial_delay_ms": 100, "max_delay_ms": 100}},
+    {"id": "f", "type": "noop", "depends_on": ["e"], "timeout_seconds": 30, "config": {"from_c": "${tasks.c.result.input.i}"}, "retry": {"max_attempts": 10, "strategy": "fixed", "initial_delay_ms": 100, "max_delay_ms": 100}}
+  ]
+}

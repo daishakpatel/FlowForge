@@ -1,0 +1,9 @@
+{
+  "name": "chain", "on_failure": "fail",
+  "tasks": [
+    {"id": "a", "type": "sleep", "config": {"duration_ms": 1500}, "retry": {"max_attempts": 3, "strategy": "fixed", "initial_delay_ms": 100, "max_delay_ms": 100}},
+    {"id": "b", "type": "sleep", "depends_on": ["a"], "config": {"duration_ms": 1500}, "retry": {"max_attempts": 3, "strategy": "fixed", "initial_delay_ms": 100, "max_delay_ms": 100}},
+    {"id": "c", "type": "sleep", "depends_on": ["b"], "config": {"duration_ms": 1500}, "retry": {"max_attempts": 3, "strategy": "fixed", "initial_delay_ms": 100, "max_delay_ms": 100}},
+    {"id": "d", "type": "echo", "depends_on": ["c"]}
+  ]
+}

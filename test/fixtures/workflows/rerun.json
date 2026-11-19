@@ -1,0 +1,9 @@
+{
+  "name": "rerun", "on_failure": "fail",
+  "tasks": [
+    {"id": "work", "type": "sleep", "config": {"duration_ms": 3000}, "retry": {"max_attempts": 1}},
+    {"id": "investigate", "type": "fail", "depends_on": ["work"], "run_if": "on_failure",
+     "config": {"code": "ESCALATED", "retryable": false, "message": "${tasks.work.status}: needs an operator"}},
+    {"id": "publish", "type": "echo", "depends_on": ["work"], "config": {"slept": "${tasks.work.result.slept_ms}"}}
+  ]
+}

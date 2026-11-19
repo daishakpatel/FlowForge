@@ -1,0 +1,8 @@
+{
+  "name": "non-retryable", "on_failure": "fail",
+  "tasks": [
+    {"id": "boom", "type": "fail", "config": {"code": "BAD_INPUT", "retryable": false, "message": "input rejected"},
+     "retry": {"max_attempts": 3, "strategy": "fixed", "initial_delay_ms": 100, "max_delay_ms": 100}},
+    {"id": "after", "type": "echo", "depends_on": ["boom"]}
+  ]
+}

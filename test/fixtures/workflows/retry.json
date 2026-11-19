@@ -1,0 +1,8 @@
+{
+  "name": "retry", "on_failure": "fail",
+  "tasks": [
+    {"id": "flaky", "type": "flaky", "config": {"fail_attempts": 2},
+     "retry": {"max_attempts": 3, "strategy": "fixed", "initial_delay_ms": 200, "max_delay_ms": 200}},
+    {"id": "after", "type": "echo", "depends_on": ["flaky"]}
+  ]
+}

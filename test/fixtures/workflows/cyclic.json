@@ -1,0 +1,7 @@
+{
+  "name": "cyclic", "on_failure": "fail",
+  "tasks": [
+    {"id": "a", "type": "noop", "depends_on": ["b"]},
+    {"id": "b", "type": "noop", "depends_on": ["a"]}
+  ]
+}

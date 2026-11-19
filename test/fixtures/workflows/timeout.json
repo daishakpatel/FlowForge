@@ -1,0 +1,6 @@
+{
+  "name": "timeout", "on_failure": "fail",
+  "tasks": [
+    {"id": "slow", "type": "sleep", "timeout_seconds": 1, "config": {"duration_ms": 30000}, "retry": {"max_attempts": 1}}
+  ]
+}
