@@ -97,6 +97,10 @@ linters:
       - path: (^|/)cmd/
         linters:
           - forbidigo
+      # test/e2e drives real processes in real time and reads its FF_E2E_* knobs (03.09).
+      - path: (^|/)test/e2e/
+        linters:
+          - forbidigo
       # internal/clock wraps the time package; only the time rule is lifted, the env ban still applies.
       - path: (^|/)internal/clock/
         text: time\.

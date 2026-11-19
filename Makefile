@@ -18,7 +18,7 @@ LDFLAGS               := -X $(MODULE)/internal/version.version=$(VERSION) -X $(M
 COVER_PROFILE         := coverage.out
 COMPOSE               := docker compose --profile core --profile streaming
 
-.PHONY: help build test test-race test-integration lint lint-selftest fmt tidy cover cover-check proto proto-check proto-breaking sqlc sqlc-check migrate-up migrate-status openapi-check clean dev-up dev-down dev-reset psql psql-md logs
+.PHONY: help build test test-race test-integration test-crash test-e2e lint lint-selftest fmt tidy cover cover-check proto proto-check proto-breaking sqlc sqlc-check migrate-up migrate-status openapi-check clean dev-up dev-down dev-reset psql psql-md logs
 
 help: ## List targets
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-18s %s\n", $$1, $$2}'
@@ -39,9 +39,12 @@ test-integration: ## Integration tests (build tag `integration`; needs Docker or
 test-crash: ## Crash-consistency tests: failpoints compiled in (tags integration,failpoint; 03.04)
 	go test -race -count=1 -timeout=10m -tags='integration failpoint' ./internal/recovery/ ./internal/scheduler/ ./internal/workerapi/ ./internal/outbox/ ./internal/cron/
 
+test-e2e: ## Workflow-engine end-to-end suite: real binaries as subprocesses + Postgres in Docker (tag e2e; 03.09)
+	go test -count=1 -timeout=20m -tags=e2e -v ./test/e2e/
+
 lint: ## golangci-lint (formatters + linters, incl. boundary rules)
 	@golangci-lint --version | grep -q " $(GOLANGCI_LINT_VERSION) " || echo "lint: warning: expected golangci-lint $(GOLANGCI_LINT_VERSION) (see docs/decisions/versions.md)"
-	golangci-lint run --build-tags=integration ./...
+	golangci-lint run --build-tags=integration,e2e ./...
 
 lint-selftest: ## Prove the depguard and forbidigo boundary rules fire
 	scripts/dev/lint-selftest.sh

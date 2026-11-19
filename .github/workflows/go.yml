@@ -56,6 +56,24 @@ jobs:
       - run: make test-crash
       - run: make openapi-check
 
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30 # above go test -timeout=20m, so a hang dumps goroutines and logs upload
+    env:
+      FF_E2E_LOG_DIR: ${{ github.workspace }}/e2e-logs
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      # Real binaries as subprocesses against Postgres in Docker, plus the 500-run chaos soak (03.09).
+      - run: make test-e2e
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-logs
+          path: e2e-logs
+
   proto:
     runs-on: ubuntu-latest
     steps:
