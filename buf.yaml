@@ -10,6 +10,16 @@ lint:
     # 00E §8 names the ShipLogs stream message LogLine, not ShipLogsRequest.
     RPC_REQUEST_STANDARD_NAME:
       - proto/worker/v1/worker.proto
+      - proto/coordination/v1/raft.proto
+    # 04.01 names the coordination services KV, Cluster and RaftPeer, and the peer stream
+    # carries one Envelope type both ways.
+    SERVICE_SUFFIX:
+      - proto/coordination/v1/kv.proto
+      - proto/coordination/v1/raft.proto
+    RPC_RESPONSE_STANDARD_NAME:
+      - proto/coordination/v1/raft.proto
+    RPC_REQUEST_RESPONSE_UNIQUE:
+      - proto/coordination/v1/raft.proto
 breaking:
   use:
     - FILE
