@@ -1,0 +1,268 @@
+// Coordination service of the Raft KV (00E §5, ADR-002, ADR-005, ADR-006, task 04.01): the
+// API the scheduler and the API tier use for leader election, fencing epochs and worker leases.
+// It holds coordination state only; Postgres owns workflow state (ADR-003).
+//
+// Errors are gRPC statuses carrying a google.rpc.ErrorInfo whose reason is a 00E §4 code:
+//   - NOT_LEADER (FAILED_PRECONDITION): this node can't serve the request; metadata
+//     "leader_hint" is the leader's node id when known. Retry against it.
+//   - NO_QUORUM (UNAVAILABLE): a write or linearizable read could not reach a quorum.
+//   - CONFLICT (ABORTED): an expected_version did not match; metadata "current_version".
+//     (Task 04.01 calls this VERSION_MISMATCH; 00E §4 names version conflicts CONFLICT.)
+//   - INVALID_ARGUMENT, NOT_FOUND (an unknown or expired lease), as in 00E §4.
+// Fields are only ever added; removed fields are reserved (00C §9).
+syntax = "proto3";
+
+package coordination.v1;
+
+option go_package = "github.com/daishakpatel/flowforge/internal/gen/proto/coordination/v1;coordinationv1";
+
+// KV is the replicated key-value store. Every mutation goes through the Raft log; reads are
+// linearizable (ReadIndex on the leader) unless SERIALIZABLE is asked for.
+service KV {
+  // Get reads one key. NOT_FOUND when the key is absent or bound to an expired lease.
+  rpc Get(GetRequest) returns (GetResponse);
+  // Put writes a key, optionally only at expected_version and optionally bound to a lease.
+  rpc Put(PutRequest) returns (PutResponse);
+  // Delete removes a key, optionally only at expected_version.
+  rpc Delete(DeleteRequest) returns (DeleteResponse);
+  // List returns up to limit keys under prefix, in key order.
+  rpc List(ListRequest) returns (ListResponse);
+  // CAS writes or deletes a key only if its version is expected_version (0: must not exist).
+  // A mismatch is not an error: succeeded is false and kv holds the current value.
+  rpc CAS(CASRequest) returns (CASResponse);
+  // Txn evaluates every compare; if all hold it runs success, else failure (≤ 8 ops in all).
+  rpc Txn(TxnRequest) returns (TxnResponse);
+  // LeaseGrant creates a lease of ttl_ms for owner and returns its id and fencing token.
+  rpc LeaseGrant(LeaseGrantRequest) returns (LeaseGrantResponse);
+  // LeaseKeepAlive extends a live lease by its ttl from the command's timestamp.
+  rpc LeaseKeepAlive(LeaseKeepAliveRequest) returns (LeaseKeepAliveResponse);
+  // LeaseRevoke ends a lease and deletes the keys bound to it.
+  rpc LeaseRevoke(LeaseRevokeRequest) returns (LeaseRevokeResponse);
+  // IncrCounter atomically increments a named counter and returns its new value (≥ 1).
+  rpc IncrCounter(IncrCounterRequest) returns (IncrCounterResponse);
+}
+
+// Cluster reports the Raft group's state.
+service Cluster {
+  // Status describes this node, the leader and the members.
+  rpc Status(StatusRequest) returns (StatusResponse);
+  // Health reports whether this node is part of a working quorum.
+  rpc Health(HealthRequest) returns (HealthResponse);
+}
+
+// Consistency of a read.
+enum Consistency {
+  CONSISTENCY_UNSPECIFIED = 0; // treated as LINEARIZABLE
+  CONSISTENCY_LINEARIZABLE = 1; // ReadIndex on the leader: sees every committed write
+  CONSISTENCY_SERIALIZABLE = 2; // this node's applied state: may be stale, never torn
+}
+
+// RequestMeta identifies a mutating request. The FSM dedupes on (client_id, request_id), so a
+// retry after a timeout is applied at most once. The receiving node stamps the command's
+// timestamp before proposing it; clients never send one (ADR-005).
+message RequestMeta {
+  string client_id = 1;
+  string request_id = 2;
+}
+
+// KeyValue is a stored key.
+message KeyValue {
+  string key = 1;
+  bytes value = 2;
+  uint64 version = 3; // per-key modification counter, 1 on creation
+  uint64 mod_index = 4; // Raft log index of the last modification
+  uint64 lease_id = 5; // 0: not bound to a lease
+}
+
+message GetRequest {
+  string key = 1;
+  Consistency consistency = 2;
+}
+
+message GetResponse {
+  KeyValue kv = 1;
+}
+
+message PutRequest {
+  RequestMeta meta = 1;
+  string key = 2;
+  bytes value = 3;
+  optional uint64 expected_version = 4; // set: write only at this version (0: must not exist)
+  uint64 lease_id = 5; // 0: no lease
+}
+
+message PutResponse {
+  KeyValue kv = 1; // the key as written
+}
+
+message DeleteRequest {
+  RequestMeta meta = 1;
+  string key = 2;
+  optional uint64 expected_version = 3;
+}
+
+message DeleteResponse {
+  bool deleted = 1; // false when the key did not exist
+}
+
+message ListRequest {
+  string prefix = 1;
+  uint32 limit = 2; // 0: the server's default
+  Consistency consistency = 3;
+}
+
+message ListResponse {
+  repeated KeyValue kvs = 1;
+  bool more = 2; // more keys match than were returned
+}
+
+message CASRequest {
+  RequestMeta meta = 1;
+  string key = 2;
+  uint64 expected_version = 3; // 0: the key must not exist
+  oneof action {
+    bytes value = 4; // write this value
+    CASDelete delete = 5; // delete the key
+  }
+  uint64 lease_id = 6; // with value: bind the key to this lease
+}
+
+// CASDelete selects the delete action of a CAS; it has no fields.
+message CASDelete {}
+
+message CASResponse {
+  bool succeeded = 1;
+  KeyValue kv = 2; // the key after a successful write, or its current value on mismatch
+}
+
+// Compare is one condition of a Txn.
+message Compare {
+  enum Target {
+    TARGET_UNSPECIFIED = 0;
+    TARGET_VERSION = 1;
+    TARGET_VALUE = 2;
+    TARGET_LEASE = 3;
+  }
+  enum Result {
+    RESULT_UNSPECIFIED = 0;
+    RESULT_EQUAL = 1;
+    RESULT_NOT_EQUAL = 2;
+    RESULT_GREATER = 3;
+    RESULT_LESS = 4;
+  }
+  string key = 1;
+  Target target = 2;
+  Result result = 3;
+  oneof operand {
+    uint64 version = 4; // TARGET_VERSION (0: absent)
+    bytes value = 5; // TARGET_VALUE
+    uint64 lease_id = 6; // TARGET_LEASE
+  }
+}
+
+// Op is one action of a Txn.
+message Op {
+  oneof op {
+    PutOp put = 1;
+    DeleteOp delete = 2;
+    GetOp get = 3;
+  }
+}
+
+message PutOp {
+  string key = 1;
+  bytes value = 2;
+  uint64 lease_id = 3;
+}
+
+message DeleteOp {
+  string key = 1;
+}
+
+message GetOp {
+  string key = 1;
+}
+
+message OpResult {
+  oneof result {
+    KeyValue put = 1; // the key as written
+    bool deleted = 2;
+    KeyValue get = 3; // unset when absent
+  }
+}
+
+message TxnRequest {
+  RequestMeta meta = 1;
+  repeated Compare compare = 2;
+  repeated Op success = 3;
+  repeated Op failure = 4;
+}
+
+message TxnResponse {
+  bool succeeded = 1; // every compare held, so success ran
+  repeated OpResult results = 2; // one per op of the branch that ran
+}
+
+message LeaseGrantRequest {
+  RequestMeta meta = 1;
+  uint64 ttl_ms = 2;
+  string owner = 3; // free text for operators, e.g. a node or worker id
+}
+
+message LeaseGrantResponse {
+  uint64 lease_id = 1;
+  uint64 fencing_token = 2; // strictly increasing across every lease ever granted
+  uint64 ttl_ms = 3;
+}
+
+message LeaseKeepAliveRequest {
+  RequestMeta meta = 1;
+  uint64 lease_id = 2;
+  uint64 fencing_token = 3; // must match the grant; a mismatch is NOT_FOUND
+}
+
+message LeaseKeepAliveResponse {
+  uint64 lease_id = 1;
+  uint64 ttl_ms = 2;
+}
+
+message LeaseRevokeRequest {
+  RequestMeta meta = 1;
+  uint64 lease_id = 2;
+}
+
+message LeaseRevokeResponse {}
+
+message IncrCounterRequest {
+  RequestMeta meta = 1;
+  string name = 2;
+}
+
+message IncrCounterResponse {
+  uint64 value = 1;
+}
+
+message StatusRequest {}
+
+// Member is one node of the static Raft group.
+message Member {
+  uint64 id = 1;
+  string peer_addr = 2;
+  string client_addr = 3;
+}
+
+message StatusResponse {
+  uint64 node_id = 1;
+  uint64 leader_id = 2; // 0: no known leader
+  uint64 term = 3;
+  uint64 commit_index = 4;
+  uint64 applied_index = 5;
+  repeated Member members = 6;
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  bool healthy = 1; // a leader is known and this node applies committed entries
+  uint64 leader_id = 2;
+}

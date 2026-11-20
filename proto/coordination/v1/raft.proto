@@ -1,0 +1,38 @@
+// Raft peer transport (task 04.01; 04.02 implements it). Nodes of one cluster exchange Raft
+// messages over one bidirectional stream per peer pair. The consensus algorithm is the etcd
+// raft library's (ADR-002); this only carries its messages.
+// Fields are only ever added; removed fields are reserved (00C §9).
+syntax = "proto3";
+
+package coordination.v1;
+
+option go_package = "github.com/daishakpatel/flowforge/internal/gen/proto/coordination/v1;coordinationv1";
+
+// RaftPeer is served by every node to its peers.
+service RaftPeer {
+  // Stream carries Envelopes in both directions. A receiver drops envelopes whose cluster_id
+  // or to does not match its own.
+  rpc Stream(stream Envelope) returns (stream Envelope);
+}
+
+// Envelope is one Raft message, or one chunk of a snapshot message, between two nodes.
+message Envelope {
+  uint64 cluster_id = 1;
+  uint64 from = 2; // sender node id
+  uint64 to = 3; // receiver node id
+  oneof payload {
+    bytes message = 4; // a marshalled raftpb.Message (any type but a MsgSnap with data)
+    SnapshotChunk snapshot_chunk = 5;
+  }
+}
+
+// SnapshotChunk is a piece of a MsgSnap: the message (with its snapshot data emptied) travels in
+// the first chunk, then the data in order, each piece ≤ 1 MiB. The receiver reassembles the
+// message once last is set and sizes add up to total_size.
+message SnapshotChunk {
+  bytes message = 1; // the marshalled raftpb.Message, first chunk only
+  uint64 offset = 2; // byte offset of data in the snapshot
+  bytes data = 3; // ≤ 1 MiB (1048576 bytes)
+  uint64 total_size = 4; // size of the whole snapshot data
+  bool last = 5;
+}
