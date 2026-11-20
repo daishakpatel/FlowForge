@@ -91,7 +91,7 @@ Defaults are dev-only. "—" means there is no default.
 | `FF_AI_URL` | `http://ai-ops:8000` | url | `Worker` |
 | `FF_AI_TOKEN` | — | secret | `Worker` |
 | `FF_RAFT_NODE_ID` | — | positive (uint64, as the etcd Raft library requires) | `Raft` |
-| `FF_RAFT_PEERS` | — | required (list; entry format from task 04.02) | `Raft` |
+| `FF_RAFT_PEERS` | — | required (list of `<id>=<host:port>`, e.g. `1=raft-1:7001,2=raft-2:7001,3=raft-3:7001`; parsed by `node.ParsePeers`, 04.02) | `Raft` |
 | `FF_RAFT_DATA_DIR` | — | required | `Raft` |
 | `FF_RAFT_CLIENT_ADDR` | — | required, addr | `Raft` |
 | `FF_RAFT_PEER_ADDR` | — | required, addr | `Raft` |
