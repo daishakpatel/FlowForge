@@ -61,11 +61,23 @@ linters:
             - pkg: github.com/daishakpatel/flowforge/internal/api
               desc: domain must not depend on the API layer (00C §8)
         raft-fsm:
+          # 04.03: the FSM's non-test code reads no clock, randomness, OS state or network, so
+          # replicas applying the same log converge byte for byte (00C §8.1). Its tests may use a
+          # seeded math/rand.
           files:
             - "**/internal/raftkv/fsm/**"
+            - "!$test"
           deny:
             - pkg: net
               desc: the Raft FSM is deterministic, no network (ADR-005)
+            - pkg: time
+              desc: the Raft FSM never reads a clock; time is the command's ts_unix_ms (ADR-005)
+            - pkg: math/rand
+              desc: the Raft FSM is deterministic, no randomness (00C §8.1)
+            - pkg: crypto/rand
+              desc: the Raft FSM is deterministic, no randomness (00C §8.1)
+            - pkg: os
+              desc: the Raft FSM depends on nothing but its log (00C §8.1)
             - pkg: github.com/daishakpatel/flowforge/internal/persistence
               desc: Raft holds coordination state only (ADR-003)
         raftkv:
