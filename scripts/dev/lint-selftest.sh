@@ -33,6 +33,14 @@ for rule in 'time\.Now' 'time\.NewTimer' 'os\.Getenv'; do
     status=1
   fi
 done
+for pkg in time math/rand; do
+  if grep -q "fsm/violation.go.*import '$pkg' .*raft-fsm.*(depguard)" <<<"$out"; then
+    echo "lint-selftest: ok   depguard keeps $pkg out of the Raft FSM"
+  else
+    echo "lint-selftest: FAIL depguard did not keep $pkg out of the Raft FSM"
+    status=1
+  fi
+done
 if [[ $status -ne 0 ]]; then
   printf '%s\n' "$out"
 fi

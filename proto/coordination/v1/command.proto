@@ -1,0 +1,118 @@
+// Replicated state machine commands, results and snapshot state (task 04.03, 00E §5, ADR-005,
+// ADR-006). A Command is the data of one Raft log entry; every replica applies it to its FSM in
+// log order and gets the same CommandResult. These messages never cross the client API: the KV
+// server (04.04) builds Commands from KV requests and reads CommandResults back.
+// Fields are only ever added; removed fields are reserved (00C §9).
+syntax = "proto3";
+
+package coordination.v1;
+
+import "coordination/v1/kv.proto";
+
+option go_package = "github.com/daishakpatel/flowforge/internal/gen/proto/coordination/v1;coordinationv1";
+
+// Command is one replicated state machine command.
+message Command {
+  CommandMeta meta = 1;
+  // The operation. A request's own meta field is ignored: Command.meta is authoritative.
+  oneof op {
+    PutRequest put = 2;
+    DeleteRequest delete = 3;
+    CASRequest cas = 4;
+    TxnRequest txn = 5;
+    LeaseGrantRequest lease_grant = 6;
+    LeaseKeepAliveRequest lease_keep_alive = 7;
+    LeaseRevokeRequest lease_revoke = 8;
+    LeaseExpire lease_expire = 9;
+    IncrCounterRequest incr_counter = 10;
+    NoOp noop = 11;
+  }
+}
+
+// CommandMeta identifies a command and carries its time. ts_unix_ms is stamped by the node that
+// received the request, before proposing (ADR-005); the FSM never reads a clock. A command with
+// both client_id and request_id set is deduplicated on that pair.
+message CommandMeta {
+  string client_id = 1;
+  string request_id = 2;
+  int64 ts_unix_ms = 3;
+}
+
+// LeaseExpire deletes a lease and its keys if it expired at meta.ts_unix_ms (expires_at <= ts).
+// The leader's expiry sweeper proposes it (04.04); applying it twice is harmless.
+message LeaseExpire {
+  uint64 lease_id = 1;
+}
+
+// NoOp changes nothing but the applied index.
+message NoOp {}
+
+// ResultCode is a command's deterministic outcome. Failed conditions (a version mismatch, an
+// unknown lease) are results, not errors: every replica reaches the same one.
+enum ResultCode {
+  RESULT_CODE_UNSPECIFIED = 0;
+  RESULT_CODE_OK = 1;
+  RESULT_CODE_VERSION_MISMATCH = 2; // expected_version differs from the key's version
+  RESULT_CODE_KEY_NOT_FOUND = 3; // expected_version > 0, but the key does not exist
+  RESULT_CODE_LEASE_NOT_FOUND = 4; // no such lease (never granted, revoked or expired), or wrong fencing token
+  RESULT_CODE_LEASE_EXPIRED = 5; // the lease exists but expired by the command's timestamp
+  RESULT_CODE_TXN_TOO_LARGE = 6; // more than 8 compares or 8 ops
+  RESULT_CODE_INVALID_ARGUMENT = 7; // malformed command, empty or oversized key or value, bad TTL
+  RESULT_CODE_QUOTA_EXCEEDED = 8; // the key or counter limit (100 000 each) is reached
+}
+
+// CommandResult is what applying a Command produced. Fields not relevant to the command are unset.
+message CommandResult {
+  ResultCode code = 1;
+  KeyValue kv = 2; // Put/CAS: the key as written; on VERSION_MISMATCH: the current key (unset if absent)
+  KeyValue prev = 3; // Put/Delete/CAS: the key before the command (unset if absent)
+  bool deleted = 4; // Delete/CAS-delete: a key was removed; LeaseExpire: the lease expired and was removed
+  bool succeeded = 5; // Txn: every compare held and the success branch ran (code is OK either way)
+  repeated OpResult results = 6; // Txn: one per op of the branch that ran
+  uint64 lease_id = 7; // LeaseGrant/KeepAlive
+  uint64 fencing_token = 8; // LeaseGrant: from the global fencing counter, strictly increasing
+  uint64 ttl_ms = 9; // LeaseGrant/KeepAlive
+  int64 expires_at_ms = 10; // LeaseGrant/KeepAlive: the lease's new expiry
+  uint64 counter = 11; // IncrCounter: the new value
+}
+
+// FSMState is the state machine's whole state, the payload of its snapshots. Every repeated
+// field is in a canonical order, so equal states encode to identical bytes.
+message FSMState {
+  uint64 last_applied = 1;
+  uint64 next_lease_id = 2; // the last lease id handed out
+  uint64 fencing = 3; // the global fencing counter's last value
+  repeated StoredKey keys = 4; // sorted by key
+  repeated StoredLease leases = 5; // sorted by id
+  repeated StoredCounter counters = 6; // sorted by name
+  repeated StoredDedupe dedupe = 7; // oldest first (eviction order)
+}
+
+message StoredKey {
+  string key = 1;
+  bytes value = 2;
+  uint64 version = 3;
+  uint64 mod_index = 4;
+  uint64 create_index = 5;
+  uint64 lease_id = 6;
+}
+
+// StoredLease is a lease; its keys are the StoredKeys carrying its id.
+message StoredLease {
+  uint64 id = 1;
+  uint64 ttl_ms = 2;
+  int64 expires_at_ms = 3;
+  string owner = 4;
+  uint64 fencing_token = 5;
+}
+
+message StoredCounter {
+  string name = 1;
+  uint64 value = 2;
+}
+
+message StoredDedupe {
+  string client_id = 1;
+  string request_id = 2;
+  CommandResult result = 3;
+}
