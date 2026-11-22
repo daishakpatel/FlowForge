@@ -95,6 +95,8 @@ Defaults are dev-only. "—" means there is no default.
 | `FF_RAFT_DATA_DIR` | — | required | `Raft` |
 | `FF_RAFT_CLIENT_ADDR` | — | required, addr | `Raft` |
 | `FF_RAFT_PEER_ADDR` | — | required, addr | `Raft` |
+| `FF_RAFT_PROPOSAL_TIMEOUT` | `3s` | positive (how long a write waits for its entry to apply, within the client's deadline; 04.04) | `Raft` |
+| `FF_RAFT_HTTP_ADDR` | `:8083` | addr (`/metrics`, `/healthz`, `/readyz`; 04.04) | `Raft` |
 
 Not read through `internal/config`:
 

@@ -133,6 +133,20 @@ func TestLoad_DefaultsForEveryService(t *testing.T) {
 	}
 }
 
+// TestLoad_RaftServerDefaults: the flowforge-raft server settings task 04.04 added have defaults.
+func TestLoad_RaftServerDefaults(t *testing.T) {
+	r, err := Load[Raft](envOpts(map[string]string{
+		"FF_RAFT_NODE_ID": "1", "FF_RAFT_PEERS": "1=raft-1:7001", "FF_RAFT_DATA_DIR": "/data",
+		"FF_RAFT_CLIENT_ADDR": ":7000", "FF_RAFT_PEER_ADDR": ":7001",
+	}))
+	if err != nil {
+		t.Fatalf("Raft: %v", err)
+	}
+	if r.ProposalTimeout != 3*time.Second || r.HTTPAddr != ":8083" {
+		t.Errorf("Raft server defaults wrong: timeout %s, http %q", r.ProposalTimeout, r.HTTPAddr)
+	}
+}
+
 func TestLoad_RequiredWithoutDefaults(t *testing.T) {
 	t.Parallel()
 	_, err := Load[Worker](envOpts(nil))

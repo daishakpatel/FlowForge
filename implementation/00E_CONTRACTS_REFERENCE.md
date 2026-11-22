@@ -268,6 +268,7 @@ Error envelope: `{"error":{"code":"…","message":"…","details":[…],"request
 
 ### 5.1 Operations (proto `coordination/v1`)
 `Get(key, consistency=LINEARIZABLE|SERIALIZABLE)`, `Put(key,value,expected_version?,lease_id?)`, `Delete(key,expected_version?)`, `List(prefix,limit,consistency)`, `CAS(key, expected_version, value|delete)` (expected_version 0 = must not exist), `Txn(compare[], success[], failure[])` (≤ 8 ops), `LeaseGrant(ttl_ms, owner) → lease_id, fencing`, `LeaseKeepAlive(lease_id, token)`, `LeaseRevoke`, `IncrCounter(name) → value`, `ClusterStatus`, `Health`.
+Read responses (04.04) also carry `applied_index`, `leader_now_ms` (LINEARIZABLE: the leader clock that judged lease expiry) and `stale` (SERIALIZABLE); `List` pages with `start_key` → `next_key` (≤ 1000 keys and ~2 MiB per page). Errors carry `google.rpc.ErrorInfo` metadata `leader_hint` (NOT_LEADER: leader node id), `current_version` (CONFLICT) and `result_code` (the FSM `ResultCode`, e.g. `LEASE_EXPIRED`). The Go client is `internal/raftkv/client` (`pkg/client/coordination`).
 Every mutating command carries `{client_id, request_id, ts_unix_ms}`; `ts` is stamped by the **receiving node** before proposal. The FSM dedupes by `(client_id, request_id)` (bounded LRU persisted in snapshot) so retries after timeout are safe. Every key has `version` (per-key modification counter) and `mod_index` (Raft log index).
 
 ### 5.2 Key layout
@@ -299,6 +300,8 @@ Election tick 10 × 100 ms = 1 s heartbeat tick 1 (100 ms); `PreVote` and `Check
 | `FF_SSE_MAX_CONNECTIONS` | `200` (open `GET /api/v1/events/stream` streams; 503 beyond; 03.07) | api |
 | `FF_RAFT_ENDPOINTS` | `raft-1:7000,raft-2:7000,raft-3:7000` | api, scheduler |
 | `FF_RAFT_NODE_ID`, `FF_RAFT_PEERS`, `FF_RAFT_DATA_DIR`, `FF_RAFT_CLIENT_ADDR`, `FF_RAFT_PEER_ADDR` | — | raft |
+| `FF_RAFT_PROPOSAL_TIMEOUT` | `3s` (a write's wait for apply, within the client deadline; 04.04) | raft |
+| `FF_RAFT_HTTP_ADDR` | `:8083` (`/metrics`, `/healthz`, `/readyz`; 04.04) | raft |
 | `FF_SCHED_TICK` | `500ms` | scheduler |
 | `FF_SCHED_HTTP_ADDR` | `:8081` (`/metrics`, `/healthz`, `/readyz`) | scheduler |
 | `FF_QUEUE_LIMITS` | unset = unlimited (`queue=n,queue2=m`: max QUEUED+RUNNING tasks per queue across runs) | scheduler |
@@ -411,6 +414,7 @@ Metric names (prefix per component; labels low-cardinality only: `queue`, `task_
 - Leader loops (03.04): `flowforge_loop_errors_total{loop}` (`scheduler`, `timeout`, `recovery`); the label `loop` joins the allowed labels.
 - Worker runtime (03.03): `flowforge_worker_task_outcomes_total{outcome}` (`succeeded`, `failed`, `cancelled`, `shutdown`, `stale`, `report_failed`), `flowforge_worker_log_lines_dropped_total`.
 - Coordination: `flowforge_leader_changes_total`, `flowforge_raft_leader_changes_total`.
+- Raft KV server (04.04): `flowforge_raft_requests_total{method,code}`, `flowforge_raft_request_duration_seconds{method}`, `flowforge_raft_read_index_duration_seconds`, `flowforge_raft_leases_swept_total{outcome}` (`outcome` = `expired`, `error`).
 - Tracing: dropped-span counter `flowforge_otel_dropped_spans_total`.
 - `metrics/catalogue.yaml` (task 08.02) is generated from this section and is the machine-checked source after that task.
 
