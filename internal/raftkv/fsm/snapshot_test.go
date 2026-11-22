@@ -132,3 +132,12 @@ func TestRestore_RejectsBadInputWithoutChangingState(t *testing.T) {
 		t.Fatal("the unmodified state must restore")
 	}
 }
+
+// TestStateHashAt_PairsTheHashWithItsIndex: the hash and the applied index come from one read.
+func TestStateHashAt_PairsTheHashWithItsIndex(t *testing.T) {
+	f := populated(t, 7)
+	h, idx := f.StateHashAt()
+	if idx != f.AppliedIndex() || h != f.StateHash() || idx == 0 {
+		t.Fatalf("StateHashAt = %x@%d; StateHash %x, applied %d", h, idx, f.StateHash(), f.AppliedIndex())
+	}
+}

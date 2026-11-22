@@ -654,3 +654,199 @@ var Cluster_ServiceDesc = grpc.ServiceDesc{
 	Streams:  []grpc.StreamDesc{},
 	Metadata: "coordination/v1/kv.proto",
 }
+
+const (
+	Admin_TransferLeader_FullMethodName = "/coordination.v1.Admin/TransferLeader"
+	Admin_SnapshotNow_FullMethodName    = "/coordination.v1.Admin/SnapshotNow"
+	Admin_Compact_FullMethodName        = "/coordination.v1.Admin/Compact"
+)
+
+// AdminClient is the client API for Admin service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// Admin is operator tooling (task 04.06): dev/ops only. Every call needs the metadata
+// "authorization: Bearer <FF_RAFT_ADMIN_TOKEN>"; with no token configured the service refuses
+// everything (PERMISSION_DENIED). Read-only inspection is Cluster.Status.
+type AdminClient interface {
+	// TransferLeader asks this node, which must lead, to hand leadership to another voter
+	// (0: the most up-to-date reachable follower) and waits until it no longer leads.
+	TransferLeader(ctx context.Context, in *TransferLeaderRequest, opts ...grpc.CallOption) (*TransferLeaderResponse, error)
+	// SnapshotNow snapshots the state machine at this node's applied index and compacts the log
+	// to the configured trailing entries.
+	SnapshotNow(ctx context.Context, in *SnapshotNowRequest, opts ...grpc.CallOption) (*SnapshotNowResponse, error)
+	// Compact drops this node's whole log up to its latest snapshot.
+	Compact(ctx context.Context, in *CompactRequest, opts ...grpc.CallOption) (*CompactResponse, error)
+}
+
+type adminClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewAdminClient(cc grpc.ClientConnInterface) AdminClient {
+	return &adminClient{cc}
+}
+
+func (c *adminClient) TransferLeader(ctx context.Context, in *TransferLeaderRequest, opts ...grpc.CallOption) (*TransferLeaderResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TransferLeaderResponse)
+	err := c.cc.Invoke(ctx, Admin_TransferLeader_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminClient) SnapshotNow(ctx context.Context, in *SnapshotNowRequest, opts ...grpc.CallOption) (*SnapshotNowResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SnapshotNowResponse)
+	err := c.cc.Invoke(ctx, Admin_SnapshotNow_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminClient) Compact(ctx context.Context, in *CompactRequest, opts ...grpc.CallOption) (*CompactResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CompactResponse)
+	err := c.cc.Invoke(ctx, Admin_Compact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// AdminServer is the server API for Admin service.
+// All implementations must embed UnimplementedAdminServer
+// for forward compatibility.
+//
+// Admin is operator tooling (task 04.06): dev/ops only. Every call needs the metadata
+// "authorization: Bearer <FF_RAFT_ADMIN_TOKEN>"; with no token configured the service refuses
+// everything (PERMISSION_DENIED). Read-only inspection is Cluster.Status.
+type AdminServer interface {
+	// TransferLeader asks this node, which must lead, to hand leadership to another voter
+	// (0: the most up-to-date reachable follower) and waits until it no longer leads.
+	TransferLeader(context.Context, *TransferLeaderRequest) (*TransferLeaderResponse, error)
+	// SnapshotNow snapshots the state machine at this node's applied index and compacts the log
+	// to the configured trailing entries.
+	SnapshotNow(context.Context, *SnapshotNowRequest) (*SnapshotNowResponse, error)
+	// Compact drops this node's whole log up to its latest snapshot.
+	Compact(context.Context, *CompactRequest) (*CompactResponse, error)
+	mustEmbedUnimplementedAdminServer()
+}
+
+// UnimplementedAdminServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedAdminServer struct{}
+
+func (UnimplementedAdminServer) TransferLeader(context.Context, *TransferLeaderRequest) (*TransferLeaderResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method TransferLeader not implemented")
+}
+func (UnimplementedAdminServer) SnapshotNow(context.Context, *SnapshotNowRequest) (*SnapshotNowResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SnapshotNow not implemented")
+}
+func (UnimplementedAdminServer) Compact(context.Context, *CompactRequest) (*CompactResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Compact not implemented")
+}
+func (UnimplementedAdminServer) mustEmbedUnimplementedAdminServer() {}
+func (UnimplementedAdminServer) testEmbeddedByValue()               {}
+
+// UnsafeAdminServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to AdminServer will
+// result in compilation errors.
+type UnsafeAdminServer interface {
+	mustEmbedUnimplementedAdminServer()
+}
+
+func RegisterAdminServer(s grpc.ServiceRegistrar, srv AdminServer) {
+	// If the following call panics, it indicates UnimplementedAdminServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&Admin_ServiceDesc, srv)
+}
+
+func _Admin_TransferLeader_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TransferLeaderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServer).TransferLeader(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Admin_TransferLeader_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServer).TransferLeader(ctx, req.(*TransferLeaderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Admin_SnapshotNow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SnapshotNowRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServer).SnapshotNow(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Admin_SnapshotNow_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServer).SnapshotNow(ctx, req.(*SnapshotNowRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Admin_Compact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CompactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServer).Compact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Admin_Compact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServer).Compact(ctx, req.(*CompactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// Admin_ServiceDesc is the grpc.ServiceDesc for Admin service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var Admin_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "coordination.v1.Admin",
+	HandlerType: (*AdminServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "TransferLeader",
+			Handler:    _Admin_TransferLeader_Handler,
+		},
+		{
+			MethodName: "SnapshotNow",
+			Handler:    _Admin_SnapshotNow_Handler,
+		},
+		{
+			MethodName: "Compact",
+			Handler:    _Admin_Compact_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "coordination/v1/kv.proto",
+}

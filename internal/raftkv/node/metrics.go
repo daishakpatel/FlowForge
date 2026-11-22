@@ -9,12 +9,12 @@ import (
 	"github.com/daishakpatel/flowforge/internal/obs"
 )
 
-// Metrics are the node's 00E §11 Raft metrics. A nil *Metrics records nothing. 04.06 adds the
-// snapshot and apply-duration metrics.
+// Metrics are the node's 00E §11 Raft metrics. A nil *Metrics records nothing.
 type Metrics struct {
 	isLeader, term, commit, applied, pending prometheus.Gauge
 	unreachable                              *prometheus.GaugeVec
-	writeSeconds                             prometheus.Observer
+	writeSeconds, applySeconds               prometheus.Observer
+	snapshots, leaderChanges                 prometheus.Counter
 }
 
 // NewMetrics registers the node metrics on reg. Register them once per process.
@@ -55,7 +55,63 @@ func NewMetrics(reg *obs.Registry) (*Metrics, error) {
 		return nil, fmt.Errorf("register raft metrics: %w", err)
 	}
 	m.writeSeconds = w.WithLabelValues()
+	a, err := reg.Histogram(prometheus.HistogramOpts{
+		Namespace: "flowforge", Subsystem: "raft", Name: "apply_duration_seconds",
+		Help:    "Duration of applying one batch of committed entries to the state machine.",
+		Buckets: prometheus.ExponentialBuckets(0.00005, 2, 16),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("register raft metrics: %w", err)
+	}
+	m.applySeconds = a.WithLabelValues()
+	counters := []struct {
+		dst  *prometheus.Counter
+		name string
+		sub  string
+		help string
+	}{
+		{&m.snapshots, "snapshot_total", "raft", "Snapshots this node took (automatic and on demand)."},
+		{&m.leaderChanges, "leader_changes_total", "raft", "Times this node saw a new Raft leader."},
+	}
+	for _, c := range counters {
+		v, err := reg.Counter(prometheus.CounterOpts{Namespace: "flowforge", Subsystem: c.sub, Name: c.name, Help: c.help})
+		if err != nil {
+			return nil, fmt.Errorf("register raft metrics: %w", err)
+		}
+		*c.dst = v.WithLabelValues()
+	}
 	return m, nil
+}
+
+// initPeers exports peer_unreachable as 0 for every other voter from the start, so the series
+// exists before the first failure (dashboards and the metrics catalogue test rely on it).
+func (m *Metrics) initPeers(self uint64, peers []Peer) {
+	if m == nil {
+		return
+	}
+	for _, p := range peers {
+		if p.ID != self {
+			m.unreachable.WithLabelValues(strconv.FormatUint(p.ID, 10)).Set(0)
+		}
+	}
+}
+
+func (m *Metrics) applyDone(seconds float64) {
+	if m != nil {
+		m.applySeconds.Observe(seconds)
+	}
+}
+
+func (m *Metrics) snapshotted() {
+	if m != nil {
+		m.snapshots.Inc()
+	}
+}
+
+func (m *Metrics) leaderChanged() {
+	if m != nil {
+		m.leaderChanges.Inc()
+	}
 }
 
 func (m *Metrics) observe(s Status, pending int) {

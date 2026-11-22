@@ -145,6 +145,35 @@ func TestLoad_RaftServerDefaults(t *testing.T) {
 	if r.ProposalTimeout != 3*time.Second || r.HTTPAddr != ":8083" {
 		t.Errorf("Raft server defaults wrong: timeout %s, http %q", r.ProposalTimeout, r.HTTPAddr)
 	}
+	// 04.06: the snapshot policy and the (unset) admin token.
+	if r.SnapshotEntries != 10_000 || r.SnapshotTrailing != 1_000 || r.AdminToken.Reveal() != "" {
+		t.Errorf("Raft snapshot/admin defaults wrong: %d, %d, token set %v", r.SnapshotEntries, r.SnapshotTrailing, r.AdminToken.Reveal() != "")
+	}
+}
+
+// TestLoad_RaftSnapshotPolicyBounds: fewer than 50 entries between snapshots, or trailing entries
+// not below the interval, is refused (04.06).
+func TestLoad_RaftSnapshotPolicyBounds(t *testing.T) {
+	base := map[string]string{
+		"FF_RAFT_NODE_ID": "1", "FF_RAFT_PEERS": "1=raft-1:7001", "FF_RAFT_DATA_DIR": "/data",
+		"FF_RAFT_CLIENT_ADDR": ":7000", "FF_RAFT_PEER_ADDR": ":7001",
+	}
+	for _, bad := range []map[string]string{
+		{"FF_RAFT_SNAPSHOT_ENTRIES": "49"},
+		{"FF_RAFT_SNAPSHOT_ENTRIES": "50", "FF_RAFT_SNAPSHOT_TRAILING": "50"},
+		{"FF_RAFT_SNAPSHOT_TRAILING": "0"},
+	} {
+		env := maps.Clone(base)
+		maps.Copy(env, bad)
+		if _, err := Load[Raft](envOpts(env)); err == nil {
+			t.Errorf("Load accepted %v", bad)
+		}
+	}
+	env := maps.Clone(base)
+	maps.Copy(env, map[string]string{"FF_RAFT_SNAPSHOT_ENTRIES": "50", "FF_RAFT_SNAPSHOT_TRAILING": "10"})
+	if r, err := Load[Raft](envOpts(env)); err != nil || r.SnapshotEntries != 50 {
+		t.Errorf("Load(50/10) = %+v, %v", r, err)
+	}
 }
 
 func TestLoad_RequiredWithoutDefaults(t *testing.T) {

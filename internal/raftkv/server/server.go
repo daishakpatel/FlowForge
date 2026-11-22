@@ -40,14 +40,17 @@ type Config struct {
 	Clock           clock.Clock   // stamps commands and judges expiry; default clock.Real
 	Logger          *slog.Logger  // default: discard
 	Metrics         *Metrics      // nil records nothing
+	// AdminToken authorises the Admin service (FF_RAFT_ADMIN_TOKEN, 04.06); empty disables it.
+	AdminToken string
 }
 
-// Server implements the KV and Cluster services for one node. Its methods are safe for
+// Server implements the KV, Cluster and Admin services for one node. Its methods are safe for
 // concurrent use.
 type Server struct {
-	cfg  Config
-	node *node.Node
-	fsm  *fsm.FSM
+	cfg     Config
+	node    *node.Node
+	fsm     *fsm.FSM
+	started time.Time // Cluster.Status's uptime
 }
 
 // New returns a server for n, whose Applier must be fsm.NewApplier(f).
@@ -70,13 +73,14 @@ func New(cfg Config, n *node.Node, f *fsm.FSM) (*Server, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	return &Server{cfg: cfg, node: n, fsm: f}, nil
+	return &Server{cfg: cfg, node: n, fsm: f, started: cfg.Clock.Now()}, nil
 }
 
-// Register serves KV and Cluster on r.
+// Register serves KV, Cluster and Admin on r.
 func (s *Server) Register(r grpc.ServiceRegistrar) {
 	pb.RegisterKVServer(r, kvService{s: s})
 	pb.RegisterClusterServer(r, clusterService{s: s})
+	pb.RegisterAdminServer(r, adminService{s: s})
 }
 
 func (s *Server) now() int64 { return s.cfg.Clock.Now().UnixMilli() }

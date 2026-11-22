@@ -187,5 +187,5 @@ If the transfer can't finish within 5 s, the node stops anyway and the cluster e
 - **Multi-page lists:** a listing of several pages is not atomic.
 - **Re-executed retries:** a retry older than the dedupe window runs again.
 - **Sweeper rate:** each sweep proposes one `LeaseExpire` per lease, at most 64 every 500 ms, so a burst of more than 128 expiries a second takes several sweeps to delete. Reads hide expired keys meanwhile.
-- **Status and Health:** they report the basics; 04.06 adds peer progress, the state hash and the applied-lag bound.
+- **Status and Health:** 04.06 added peer progress, the state hash, snapshot indexes and the applied-lag bound; `Health` is `READY` only with a known leader and applied within 100 entries of commit. The fields, the `Admin` service and the operator subcommands are in [`raft-operations.md`](raft-operations.md).
 - **No Watch:** watches are not implemented (ADR-006).

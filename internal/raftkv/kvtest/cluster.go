@@ -45,7 +45,11 @@ type Options struct {
 	ProposalTimeout time.Duration // default 1s
 	SweepInterval   time.Duration // default the server's (500ms)
 	SnapshotEntries uint64        // default the node's (10 000)
-	Logger          *slog.Logger  // default: discard
+	// SnapshotTrailing is the log kept before a snapshot, default the node's (1 000) (04.06).
+	SnapshotTrailing uint64
+	// AdminToken enables the Admin service (04.06); empty disables it.
+	AdminToken string
+	Logger     *slog.Logger // default: discard
 }
 
 // ClusterID is the raft cluster id every kvtest member uses.
@@ -181,7 +185,7 @@ func (c *Cluster) start(m *member) error {
 	f := fsm.New(fsm.Options{})
 	n, err := node.New(node.Config{
 		ID: m.ID, Peers: c.peers, TickInterval: c.opts.TickInterval, SnapshotEntries: c.opts.SnapshotEntries,
-		Logger: c.opts.Logger, Metrics: nm,
+		SnapshotTrailing: c.opts.SnapshotTrailing, Logger: c.opts.Logger, Metrics: nm,
 	}, m.st, fsm.NewApplier(f))
 	if err != nil {
 		return err
@@ -194,7 +198,7 @@ func (c *Cluster) start(m *member) error {
 	}
 	srv, err := server.New(server.Config{
 		NodeID: m.ID, Members: members, Clock: c.opts.Clock, ProposalTimeout: c.opts.ProposalTimeout,
-		SweepInterval: c.opts.SweepInterval, Logger: c.opts.Logger, Metrics: sm,
+		SweepInterval: c.opts.SweepInterval, Logger: c.opts.Logger, Metrics: sm, AdminToken: c.opts.AdminToken,
 	}, n, f)
 	if err != nil {
 		return err
@@ -255,6 +259,19 @@ func (c *Cluster) kill(m *member) {
 	m.Node.Stop()
 	m.tr.Close()
 	m.lis, m.running = nil, false
+}
+
+// Wipe replaces stopped member id's storage with an empty one, as if its data directory were
+// deleted; the next Start bootstraps it and it catches up from the leader (04.06).
+func (c *Cluster) Wipe(id uint64) {
+	c.t.Helper()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	m := c.members[id]
+	if m.running {
+		c.t.Fatalf("kvtest: wipe %d while it runs", id)
+	}
+	m.st = storage.NewMem()
 }
 
 func (c *Cluster) stopAll() {

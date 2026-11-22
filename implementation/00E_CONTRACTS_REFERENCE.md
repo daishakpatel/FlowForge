@@ -268,7 +268,7 @@ Error envelope: `{"error":{"code":"…","message":"…","details":[…],"request
 
 ### 5.1 Operations (proto `coordination/v1`)
 `Get(key, consistency=LINEARIZABLE|SERIALIZABLE)`, `Put(key,value,expected_version?,lease_id?)`, `Delete(key,expected_version?)`, `List(prefix,limit,consistency)`, `CAS(key, expected_version, value|delete)` (expected_version 0 = must not exist), `Txn(compare[], success[], failure[])` (≤ 8 ops), `LeaseGrant(ttl_ms, owner) → lease_id, fencing`, `LeaseKeepAlive(lease_id, token)`, `LeaseRevoke`, `IncrCounter(name) → value`, `ClusterStatus`, `Health`.
-Read responses (04.04) also carry `applied_index`, `leader_now_ms` (LINEARIZABLE: the leader clock that judged lease expiry) and `stale` (SERIALIZABLE); `List` pages with `start_key` → `next_key` (≤ 1000 keys and ~2 MiB per page). Errors carry `google.rpc.ErrorInfo` metadata `leader_hint` (NOT_LEADER: leader node id), `current_version` (CONFLICT) and `result_code` (the FSM `ResultCode`, e.g. `LEASE_EXPIRED`). The Go client is `internal/raftkv/client` (`pkg/client/coordination`).
+Read responses (04.04) also carry `applied_index`, `leader_now_ms` (LINEARIZABLE: the leader clock that judged lease expiry) and `stale` (SERIALIZABLE); `List` pages with `start_key` → `next_key` (≤ 1000 keys and ~2 MiB per page). Errors carry `google.rpc.ErrorInfo` metadata `leader_hint` (NOT_LEADER: leader node id), `current_version` (CONFLICT) and `result_code` (the FSM `ResultCode`, e.g. `LEASE_EXPIRED`). The Go client is `internal/raftkv/client` (`pkg/client/coordination`). `Cluster.Status` reports `state`, `peers{id,addr,reachable,match_index,lag}`, `state_hash`@`state_hash_index`, `snapshot_index`, `first_index`, `uptime_ms`; `Cluster.Health` is `READY` only with a known leader and applied within 100 entries of the leader's commit (the highest a leader has sent the node); the `Admin` service (`TransferLeader`, `SnapshotNow`, `Compact`) needs `authorization: Bearer <FF_RAFT_ADMIN_TOKEN>` (04.06).
 Every mutating command carries `{client_id, request_id, ts_unix_ms}`; `ts` is stamped by the **receiving node** before proposal. The FSM dedupes by `(client_id, request_id)` (bounded LRU persisted in snapshot) so retries after timeout are safe. Every key has `version` (per-key modification counter) and `mod_index` (Raft log index).
 
 ### 5.2 Key layout
@@ -302,6 +302,8 @@ Election tick 10 × 100 ms = 1 s heartbeat tick 1 (100 ms); `PreVote` and `Check
 | `FF_RAFT_NODE_ID`, `FF_RAFT_PEERS`, `FF_RAFT_DATA_DIR`, `FF_RAFT_CLIENT_ADDR`, `FF_RAFT_PEER_ADDR` | — | raft |
 | `FF_RAFT_PROPOSAL_TIMEOUT` | `3s` (a write's wait for apply, within the client deadline; 04.04) | raft |
 | `FF_RAFT_HTTP_ADDR` | `:8083` (`/metrics`, `/healthz`, `/readyz`; 04.04) | raft |
+| `FF_RAFT_SNAPSHOT_ENTRIES` / `FF_RAFT_SNAPSHOT_TRAILING` | `10000` (≥ 50) / `1000` (> 0 and below the entries; snapshot policy, §5.3; 04.06) | raft |
+| `FF_RAFT_ADMIN_TOKEN` | unset (secret; enables the `Admin` gRPC service; 04.06) | raft, `flowforge-raft` admin subcommands |
 | `FF_SCHED_TICK` | `500ms` | scheduler |
 | `FF_SCHED_HTTP_ADDR` | `:8081` (`/metrics`, `/healthz`, `/readyz`) | scheduler |
 | `FF_QUEUE_LIMITS` | unset = unlimited (`queue=n,queue2=m`: max QUEUED+RUNNING tasks per queue across runs) | scheduler |

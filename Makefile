@@ -18,7 +18,7 @@ LDFLAGS               := -X $(MODULE)/internal/version.version=$(VERSION) -X $(M
 COVER_PROFILE         := coverage.out
 COMPOSE               := docker compose --profile core --profile streaming
 
-.PHONY: help build test test-race test-integration test-crash test-e2e lint lint-selftest fmt tidy cover cover-check proto proto-check proto-breaking sqlc sqlc-check migrate-up migrate-status openapi-check clean dev-up dev-down dev-reset psql psql-md logs
+.PHONY: help build test test-race test-integration test-crash test-e2e lint lint-selftest fmt tidy cover cover-check proto proto-check proto-breaking sqlc sqlc-check migrate-up migrate-status openapi-check clean dev-up dev-down dev-reset psql psql-md logs raft-up raft-down raft-status raft-logs raft-kill raft-restart
 
 help: ## List targets
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-18s %s\n", $$1, $$2}'
@@ -116,3 +116,27 @@ psql-md: ## psql into marketdata
 
 logs: ## Follow the dev stack's logs
 	$(COMPOSE) logs -f
+
+# 3-node Raft KV in Compose (profile raft, task 04.06). Nodes: raft-1..3, clients on 127.0.0.1:7001-7003.
+RAFT_COMPOSE := docker compose --profile raft
+RAFT_NODES   := raft-1 raft-2 raft-3
+
+raft-up: ## Build and start the 3-node Raft cluster; waits until every node is healthy
+	$(RAFT_COMPOSE) up -d --build --wait $(RAFT_NODES)
+
+raft-down: ## Stop and remove the Raft nodes (data volumes are kept)
+	$(RAFT_COMPOSE) rm --stop --force $(RAFT_NODES)
+
+raft-status: ## Print Cluster.Status of every Raft node
+	@for n in 1 2 3; do echo "== raft-$$n"; $(RAFT_COMPOSE) exec -T raft-$$n /usr/local/bin/flowforge-raft status --addr 127.0.0.1:7000 || true; done
+
+raft-logs: ## Follow the Raft nodes' logs
+	$(RAFT_COMPOSE) logs -f $(RAFT_NODES)
+
+raft-kill: ## Kill one Raft node (SIGKILL): make raft-kill N=2
+	@test -n "$(N)" || { echo "usage: make raft-kill N=<1|2|3>"; exit 2; }
+	$(RAFT_COMPOSE) kill raft-$(N)
+
+raft-restart: ## Start a stopped or killed Raft node again and wait until healthy: make raft-restart N=2
+	@test -n "$(N)" || { echo "usage: make raft-restart N=<1|2|3>"; exit 2; }
+	$(RAFT_COMPOSE) up -d --wait raft-$(N)

@@ -64,6 +64,8 @@ Every `SnapshotEntries` applied entries, the node takes a snapshot:
 - **Snapshot:** it calls `Applier.Snapshot()`, then stores the snapshot at the applied index with `SaveSnapshot`.
 - **Compaction:** it compacts the log to `SnapshotTrailing` entries before the snapshot.
 - **Failure:** a failure is logged and retried only after another `SnapshotEntries` entries, because each attempt serialises the whole state. The log stays complete.
+- **Configuration and on demand (04.06):** `FF_RAFT_SNAPSHOT_ENTRIES` and `FF_RAFT_SNAPSHOT_TRAILING` set the two values. `SnapshotNow` and `CompactNow` run the same steps on request, through the `Admin` service ([`raft-operations.md`](raft-operations.md#snapshot-policy)).
+- **A wiped node (04.06):** a heartbeat whose commit index is past the node's log is capped at the node's commit, so a node restarted with an empty data directory doesn't panic. It gets the data after a leadership transfer ([`raft-operations.md`](raft-operations.md#a-wiped-node)).
 
 ### Restart (rule 5)
 

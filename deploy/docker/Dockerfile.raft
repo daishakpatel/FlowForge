@@ -1,0 +1,26 @@
+# syntax=docker/dockerfile:1
+# flowforge-raft (task 04.06): the pattern for FlowForge's Go service images. Multi-stage, static
+# binary, non-root, no shell. Final hardening (digests, SBOM, read-only root) is task 09.02.
+# Build: docker build -f deploy/docker/Dockerfile.raft -t flowforge-raft:dev .
+# Image tags are pinned; keep them in step with docs/decisions/versions.md.
+
+FROM golang:1.27.3-bookworm AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+ARG VERSION=dev
+RUN CGO_ENABLED=0 go build -trimpath \
+      -ldflags "-s -w -X github.com/daishakpatel/flowforge/internal/version.version=${VERSION}" \
+      -o /out/flowforge-raft ./cmd/flowforge-raft \
+ && mkdir -p /out/data
+
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=build /out/flowforge-raft /usr/local/bin/flowforge-raft
+# The data directory is owned by the nonroot user (65532), so a fresh named volume mounted on it
+# inherits that ownership.
+COPY --from=build --chown=65532:65532 /out/data /data
+USER 65532:65532
+# 7000 client gRPC, 7100 peer gRPC (internal network only), 8083 /metrics /healthz /readyz.
+EXPOSE 7000 7100 8083
+ENTRYPOINT ["/usr/local/bin/flowforge-raft"]

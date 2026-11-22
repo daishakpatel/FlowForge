@@ -97,6 +97,9 @@ Defaults are dev-only. "—" means there is no default.
 | `FF_RAFT_PEER_ADDR` | — | required, addr | `Raft` |
 | `FF_RAFT_PROPOSAL_TIMEOUT` | `3s` | positive (how long a write waits for its entry to apply, within the client's deadline; 04.04) | `Raft` |
 | `FF_RAFT_HTTP_ADDR` | `:8083` | addr (`/metrics`, `/healthz`, `/readyz`; 04.04) | `Raft` |
+| `FF_RAFT_SNAPSHOT_ENTRIES` | `10000` | ≥ 50 (snapshot every this many applied entries; 04.06) | `Raft` |
+| `FF_RAFT_SNAPSHOT_TRAILING` | `1000` | positive, below `FF_RAFT_SNAPSHOT_ENTRIES` (log entries kept before a snapshot; 04.06) | `Raft` |
+| `FF_RAFT_ADMIN_TOKEN` | empty | secret; authorises the `Admin` gRPC service and the `flowforge-raft` admin subcommands; empty disables them (dev/ops; 04.06) | `Raft` |
 
 Not read through `internal/config`:
 

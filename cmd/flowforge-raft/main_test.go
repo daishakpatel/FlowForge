@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"math/rand/v2"
 	"net"
+	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -59,7 +62,8 @@ func startCluster(t *testing.T) []*proc {
 	var peers []string
 	for i := range procs {
 		p := &proc{id: uint64(i + 1), lis: map[string]net.Listener{}, done: make(chan error, 1)}
-		p.env = map[string]string{"FF_RAFT_NODE_ID": strconv.Itoa(i + 1), "FF_RAFT_DATA_DIR": t.TempDir(), "FF_LOG_LEVEL": "error"}
+		p.env = map[string]string{"FF_RAFT_NODE_ID": strconv.Itoa(i + 1), "FF_RAFT_DATA_DIR": t.TempDir(), "FF_LOG_LEVEL": "error",
+			"FF_RAFT_ADMIN_TOKEN": testAdminToken}
 		for _, key := range []string{"FF_RAFT_CLIENT_ADDR", "FF_RAFT_PEER_ADDR", "FF_RAFT_HTTP_ADDR"} {
 			l := loopback(t)
 			p.lis[l.Addr().String()] = l
@@ -169,6 +173,101 @@ func TestRun_ServesAClusterAndHandsOffLeadershipOnShutdown(t *testing.T) {
 		t.Fatalf("the writer was redirected %d times, want at most 1", n)
 	}
 	t.Logf("leader %d handed off to %d; %d writes, %d redirect(s)", lead, st.GetLeaderId(), writes.Load(), redirects.Load())
+}
+
+const testAdminToken = "dev-only-admin-token"
+
+// leaderState matches the status JSON of a leader; protojson varies its whitespace on purpose.
+var leaderState = regexp.MustCompile(`"state":\s*"LEADER"`)
+
+// admin runs a subcommand as the CLI would, with token as FF_RAFT_ADMIN_TOKEN, and returns its
+// exit code and output.
+func admin(token string, args ...string) (int, string) {
+	var out, errOut strings.Builder
+	opts := config.Options{LookupEnv: func(k string) (string, bool) {
+		if k == "FF_RAFT_ADMIN_TOKEN" && token != "" {
+			return token, true
+		}
+		return "", false
+	}}
+	code := runAdmin(context.Background(), args, opts, &out, &errOut)
+	return code, out.String() + errOut.String()
+}
+
+// TestAdminAndMetrics_AgainstACluster runs three processes and exercises every admin subcommand
+// and the metrics catalogue (04.06).
+func TestAdminAndMetrics_AgainstACluster(t *testing.T) {
+	procs := startCluster(t)
+	addrs := make([]string, len(procs))
+	for i, p := range procs {
+		addrs[i] = p.env["FF_RAFT_CLIENT_ADDR"]
+	}
+	var lead int
+	testutil.WaitFor(t, func() bool {
+		for i, a := range addrs {
+			if code, out := admin("", "status", "--addr", a); code == 0 && leaderState.MatchString(out) {
+				lead = i
+				return true
+			}
+		}
+		return false
+	}, 20*time.Second)
+	if code, out := admin("", "health", "--addr", addrs[lead]); code != 0 || !strings.Contains(out, "READY") {
+		t.Fatalf("health = %d %q", code, out)
+	}
+	// Equal state hashes at equal applied indexes on every node.
+	testutil.WaitFor(t, func() bool {
+		code, out := admin("", "dump-state-hash", "--addr", strings.Join(addrs, ","))
+		lines := strings.Split(strings.TrimSpace(out), "\n")
+		if code != 0 || len(lines) != 3 {
+			return false
+		}
+		for _, l := range lines {
+			if l[strings.Index(l, "applied="):] != lines[0][strings.Index(lines[0], "applied="):] {
+				return false
+			}
+		}
+		return true
+	}, 10*time.Second)
+	for _, cmd := range []string{"snapshot-now", "compact"} {
+		if code, out := admin(testAdminToken, cmd, "--addr", addrs[lead]); code != 0 {
+			t.Fatalf("%s = %d %q", cmd, code, out)
+		}
+	}
+	if code, _ := admin("", "snapshot-now", "--addr", addrs[lead]); code != 1 {
+		t.Fatalf("snapshot-now without a token exited %d", code)
+	}
+	if code, _ := admin("wrong", "compact", "--addr", addrs[lead]); code != 1 {
+		t.Fatalf("compact with a wrong token exited %d", code)
+	}
+	if code, _ := admin("", "nonsense"); code != 2 {
+		t.Fatalf("unknown subcommand exited %d", code)
+	}
+	to := (lead+1)%3 + 1 // a node id other than the leader's
+	if code, out := admin(testAdminToken, "transfer-leader", "--addr", addrs[lead], "--to", strconv.Itoa(to)); code != 0 {
+		t.Fatalf("transfer-leader = %d %q", code, out)
+	}
+	testutil.WaitFor(t, func() bool {
+		code, out := admin("", "status", "--addr", addrs[to-1])
+		return code == 0 && leaderState.MatchString(out)
+	}, 10*time.Second)
+
+	// Every Raft metric of 00E §11 (and §11.1) is exported.
+	res, err := http.Get("http://" + procs[lead].env["FF_RAFT_HTTP_ADDR"] + "/metrics") //nolint:noctx // test-only one-shot GET
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	for _, name := range []string{
+		"flowforge_raft_is_leader", "flowforge_raft_term", "flowforge_raft_commit_index", "flowforge_raft_applied_index",
+		"flowforge_raft_proposals_pending", "flowforge_raft_peer_unreachable", "flowforge_raft_snapshot_total",
+		"flowforge_raft_apply_duration_seconds", "flowforge_raft_write_duration_seconds", "flowforge_raft_leader_changes_total",
+	} {
+		if !bytes.Contains(body, []byte("\n"+name)) {
+			t.Errorf("/metrics lacks %s", name)
+		}
+	}
 }
 
 func TestRun_RejectsBadConfig(t *testing.T) {

@@ -46,6 +46,24 @@ type Status struct {
 	Term       uint64
 	Commit     uint64
 	Applied    uint64
+	// LeaderCommit is the highest commit index a leader has sent this node (its own commit on the
+	// leader). A follower's own Commit can't exceed its log, so lag is measured against this.
+	LeaderCommit uint64
+	// State is the raft role: LEADER, FOLLOWER, CANDIDATE or PRE_CANDIDATE (04.06).
+	State string
+	// SnapshotIndex is the latest snapshot's index; FirstIndex the first entry still in the log.
+	SnapshotIndex, FirstIndex uint64
+	// Peers is the leader's view of every voter, itself included, in id order; empty on a
+	// follower, which has no such view.
+	Peers []PeerProgress
+}
+
+// PeerProgress is a voter's replication progress as the leader sees it.
+type PeerProgress struct {
+	ID        uint64
+	Addr      string // its peer address
+	Match     uint64 // the highest index known replicated to it
+	Reachable bool   // heard from within the last election timeout (raft's RecentActive)
 }
 
 // Node is one Raft replica. Create it with New, start it with Start, and stop it with Stop; a
@@ -65,22 +83,25 @@ type Node struct {
 	reportc chan struct{} // signals pending reports (capacity 1)
 	confc   chan *pb.ConfChange
 	xferc   chan transferReq
+	opc     chan *op
 	stopc   chan struct{}
 	donec   chan struct{}
 	started atomic.Bool
 	stop    sync.Once
 
 	// Owned by the loop goroutine.
-	rn        *raft.RawNode
-	tr        Transport
-	ticker    clock.Ticker
-	applied   uint64
-	snapIndex uint64
-	snapTried uint64 // applied index of the last snapshot attempt
-	confState *pb.ConfState
-	waiters   map[proposalID]*proposal
-	reads     map[string]*readReq
-	readWait  []*readReq
+	rn           *raft.RawNode
+	tr           Transport
+	ticker       clock.Ticker
+	applied      uint64
+	snapIndex    uint64
+	snapTried    uint64 // applied index of the last snapshot attempt
+	firstIndex   uint64 // the log's first entry, kept as compaction and snapshot installs move it
+	leaderCommit uint64 // the highest commit index seen in a leader's append or heartbeat
+	confState    *pb.ConfState
+	waiters      map[proposalID]*proposal
+	reads        map[string]*readReq
+	readWait     []*readReq
 
 	// Transport reports, coalesced per peer so they never queue up or get dropped: raft keeps a
 	// follower paused until it gets its snapshot report.
@@ -116,6 +137,7 @@ func New(cfg Config, st storage.Storage, app Applier) (*Node, error) {
 		reportc: make(chan struct{}, 1),
 		confc:   make(chan *pb.ConfChange, 1),
 		xferc:   make(chan transferReq, 1),
+		opc:     make(chan *op, 1),
 		stopc:   make(chan struct{}),
 		donec:   make(chan struct{}),
 		waiters: map[proposalID]*proposal{},
@@ -141,7 +163,8 @@ func New(cfg Config, st storage.Storage, app Applier) (*Node, error) {
 		return nil, fmt.Errorf("raft node: %w", err)
 	}
 	n.rn = rn
-	n.updateStatus()
+	cfg.Metrics.initPeers(cfg.ID, cfg.Peers)
+	n.updateStatus(true)
 	return n, nil
 }
 
@@ -179,6 +202,9 @@ func (n *Node) load() error {
 	n.applied = snap.GetMetadata().GetIndex()
 	n.snapIndex = n.applied
 	n.confState = cs
+	if n.firstIndex, err = n.st.FirstIndex(); err != nil {
+		return fmt.Errorf("raft node: read storage: %w", err)
+	}
 	return nil
 }
 
@@ -336,6 +362,9 @@ func (n *Node) run() {
 			n.flushReports()
 		case x := <-n.xferc:
 			x.done <- n.transfer(x.to)
+		case o := <-n.opc:
+			v, err := o.f()
+			o.done <- opResult{v: v, err: err}
 		case cc := <-n.confc:
 			if err := n.rn.ProposeConfChange(cc); err != nil {
 				n.cfg.Logger.Warn("raft node: conf change dropped", "err", err)
@@ -346,7 +375,7 @@ func (n *Node) run() {
 			n.setErr(err)
 			return
 		}
-		n.updateStatus()
+		n.updateStatus(ticked)
 		if mt, ok := n.ticker.(*ManualTicker); ok && ticked {
 			mt.ack()
 		}
@@ -369,6 +398,21 @@ func (n *Node) step(m *pb.Message) {
 	// node's internals.
 	if raft.IsLocalMsg(m.GetType()) {
 		return
+	}
+	// A node that lost its data (wiped and restarted under the same id, 04.06) gets heartbeats
+	// whose commit index is past its log: the leader still holds its old match index. raft
+	// panics on that ("tocommit out of range"). Cap it at the current commit, which makes the
+	// heartbeat commit nothing: the node stays up and answers, and the leader's next append finds
+	// the gap and sends a snapshot. Capping only ever withholds a commit, never adds one.
+	if t := m.GetType(); t == pb.MsgApp || t == pb.MsgHeartbeat {
+		n.leaderCommit = max(n.leaderCommit, m.GetCommit()) // commit indexes only grow, cluster-wide
+	}
+	if m.GetType() == pb.MsgHeartbeat {
+		if c := n.rn.BasicStatus().GetCommit(); m.GetCommit() > c {
+			if last, err := n.st.LastIndex(); err == nil && m.GetCommit() > last {
+				m.Commit = proto.Uint64(c)
+			}
+		}
 	}
 	if err := n.rn.Step(m); err != nil && !errors.Is(err, raft.ErrStepPeerNotFound) {
 		n.cfg.Logger.Debug("raft node: step", "err", err)
@@ -398,16 +442,34 @@ func (n *Node) setErr(err error) {
 	}
 }
 
-func (n *Node) updateStatus() {
+// updateStatus publishes the node's status. The leader's peer progress is a copy of raft's
+// progress map, so it is refreshed on ticks only, not on every message of the write path.
+func (n *Node) updateStatus(ticked bool) {
 	bs := n.rn.BasicStatus()
 	s := Status{
 		ID: n.cfg.ID, Leader: bs.Lead, LeaderAddr: n.addrs[bs.Lead], IsLeader: bs.RaftState == raft.StateLeader,
-		Term: bs.GetTerm(), Commit: bs.GetCommit(), Applied: n.applied,
+		Term: bs.GetTerm(), Commit: bs.GetCommit(), Applied: n.applied, LeaderCommit: max(n.leaderCommit, bs.GetCommit()),
+		State: roleName(bs.RaftState), SnapshotIndex: n.snapIndex, FirstIndex: n.firstIndex,
+	}
+	n.mu.Lock()
+	prev := n.status.Leader
+	if s.IsLeader && !ticked && n.status.IsLeader {
+		s.Peers = n.status.Peers
+	}
+	n.mu.Unlock()
+	if s.IsLeader && s.Peers == nil {
+		for id, pr := range n.rn.Status().Progress {
+			s.Peers = append(s.Peers, PeerProgress{ID: id, Addr: n.addrs[id], Match: pr.Match, Reachable: pr.RecentActive})
+		}
+		slices.SortFunc(s.Peers, func(a, b PeerProgress) int { return cmpUint(a.ID, b.ID) })
 	}
 	n.mu.Lock()
 	n.status = s
 	n.mu.Unlock()
 	n.cfg.Metrics.observe(s, len(n.waiters))
+	if s.Leader != 0 && s.Leader != prev {
+		n.cfg.Metrics.leaderChanged()
+	}
 }
 
 // ManualTicker is a clock.Ticker that tests drive by hand. Tick delivers one tick and returns

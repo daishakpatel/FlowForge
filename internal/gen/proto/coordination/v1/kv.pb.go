@@ -2128,15 +2128,22 @@ func (x *Member) GetClientAddr() string {
 }
 
 type StatusResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	NodeId        uint64                 `protobuf:"varint,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
-	LeaderId      uint64                 `protobuf:"varint,2,opt,name=leader_id,json=leaderId,proto3" json:"leader_id,omitempty"` // 0: no known leader
-	Term          uint64                 `protobuf:"varint,3,opt,name=term,proto3" json:"term,omitempty"`
-	CommitIndex   uint64                 `protobuf:"varint,4,opt,name=commit_index,json=commitIndex,proto3" json:"commit_index,omitempty"`
-	AppliedIndex  uint64                 `protobuf:"varint,5,opt,name=applied_index,json=appliedIndex,proto3" json:"applied_index,omitempty"`
-	Members       []*Member              `protobuf:"bytes,6,rep,name=members,proto3" json:"members,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	NodeId         uint64                 `protobuf:"varint,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	LeaderId       uint64                 `protobuf:"varint,2,opt,name=leader_id,json=leaderId,proto3" json:"leader_id,omitempty"` // 0: no known leader
+	Term           uint64                 `protobuf:"varint,3,opt,name=term,proto3" json:"term,omitempty"`
+	CommitIndex    uint64                 `protobuf:"varint,4,opt,name=commit_index,json=commitIndex,proto3" json:"commit_index,omitempty"`
+	AppliedIndex   uint64                 `protobuf:"varint,5,opt,name=applied_index,json=appliedIndex,proto3" json:"applied_index,omitempty"`
+	Members        []*Member              `protobuf:"bytes,6,rep,name=members,proto3" json:"members,omitempty"`
+	State          string                 `protobuf:"bytes,7,opt,name=state,proto3" json:"state,omitempty"`                          // LEADER, FOLLOWER, CANDIDATE or PRE_CANDIDATE (04.06)
+	Peers          []*PeerStatus          `protobuf:"bytes,8,rep,name=peers,proto3" json:"peers,omitempty"`                          // the leader's view of every voter; empty on a follower
+	StateHash      []byte                 `protobuf:"bytes,9,opt,name=state_hash,json=stateHash,proto3" json:"state_hash,omitempty"` // SHA-256 of the state machine's canonical state at state_hash_index
+	StateHashIndex uint64                 `protobuf:"varint,10,opt,name=state_hash_index,json=stateHashIndex,proto3" json:"state_hash_index,omitempty"`
+	SnapshotIndex  uint64                 `protobuf:"varint,11,opt,name=snapshot_index,json=snapshotIndex,proto3" json:"snapshot_index,omitempty"` // this node's latest snapshot
+	FirstIndex     uint64                 `protobuf:"varint,12,opt,name=first_index,json=firstIndex,proto3" json:"first_index,omitempty"`          // the first entry still in this node's log
+	UptimeMs       int64                  `protobuf:"varint,13,opt,name=uptime_ms,json=uptimeMs,proto3" json:"uptime_ms,omitempty"`                // since this server started
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *StatusResponse) Reset() {
@@ -2211,6 +2218,132 @@ func (x *StatusResponse) GetMembers() []*Member {
 	return nil
 }
 
+func (x *StatusResponse) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *StatusResponse) GetPeers() []*PeerStatus {
+	if x != nil {
+		return x.Peers
+	}
+	return nil
+}
+
+func (x *StatusResponse) GetStateHash() []byte {
+	if x != nil {
+		return x.StateHash
+	}
+	return nil
+}
+
+func (x *StatusResponse) GetStateHashIndex() uint64 {
+	if x != nil {
+		return x.StateHashIndex
+	}
+	return 0
+}
+
+func (x *StatusResponse) GetSnapshotIndex() uint64 {
+	if x != nil {
+		return x.SnapshotIndex
+	}
+	return 0
+}
+
+func (x *StatusResponse) GetFirstIndex() uint64 {
+	if x != nil {
+		return x.FirstIndex
+	}
+	return 0
+}
+
+func (x *StatusResponse) GetUptimeMs() int64 {
+	if x != nil {
+		return x.UptimeMs
+	}
+	return 0
+}
+
+// PeerStatus is a voter's replication progress, as the leader sees it.
+type PeerStatus struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            uint64                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	Addr          string                 `protobuf:"bytes,2,opt,name=addr,proto3" json:"addr,omitempty"`                                // peer address
+	Reachable     bool                   `protobuf:"varint,3,opt,name=reachable,proto3" json:"reachable,omitempty"`                     // heard from within the last election timeout
+	MatchIndex    uint64                 `protobuf:"varint,4,opt,name=match_index,json=matchIndex,proto3" json:"match_index,omitempty"` // highest index known replicated to it
+	Lag           uint64                 `protobuf:"varint,5,opt,name=lag,proto3" json:"lag,omitempty"`                                 // the leader's commit index minus match_index (0 when ahead)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PeerStatus) Reset() {
+	*x = PeerStatus{}
+	mi := &file_coordination_v1_kv_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PeerStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PeerStatus) ProtoMessage() {}
+
+func (x *PeerStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_coordination_v1_kv_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PeerStatus.ProtoReflect.Descriptor instead.
+func (*PeerStatus) Descriptor() ([]byte, []int) {
+	return file_coordination_v1_kv_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *PeerStatus) GetId() uint64 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
+func (x *PeerStatus) GetAddr() string {
+	if x != nil {
+		return x.Addr
+	}
+	return ""
+}
+
+func (x *PeerStatus) GetReachable() bool {
+	if x != nil {
+		return x.Reachable
+	}
+	return false
+}
+
+func (x *PeerStatus) GetMatchIndex() uint64 {
+	if x != nil {
+		return x.MatchIndex
+	}
+	return 0
+}
+
+func (x *PeerStatus) GetLag() uint64 {
+	if x != nil {
+		return x.Lag
+	}
+	return 0
+}
+
 type HealthRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -2219,7 +2352,7 @@ type HealthRequest struct {
 
 func (x *HealthRequest) Reset() {
 	*x = HealthRequest{}
-	mi := &file_coordination_v1_kv_proto_msgTypes[32]
+	mi := &file_coordination_v1_kv_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2231,7 +2364,7 @@ func (x *HealthRequest) String() string {
 func (*HealthRequest) ProtoMessage() {}
 
 func (x *HealthRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coordination_v1_kv_proto_msgTypes[32]
+	mi := &file_coordination_v1_kv_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2244,20 +2377,25 @@ func (x *HealthRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthRequest.ProtoReflect.Descriptor instead.
 func (*HealthRequest) Descriptor() ([]byte, []int) {
-	return file_coordination_v1_kv_proto_rawDescGZIP(), []int{32}
+	return file_coordination_v1_kv_proto_rawDescGZIP(), []int{33}
 }
 
 type HealthResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Healthy       bool                   `protobuf:"varint,1,opt,name=healthy,proto3" json:"healthy,omitempty"` // a leader is known and this node applies committed entries
-	LeaderId      uint64                 `protobuf:"varint,2,opt,name=leader_id,json=leaderId,proto3" json:"leader_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// healthy: a leader is known and this node has applied to within 100 entries of its commit
+	// index (04.06; status READY), so it can serve linearizable traffic soon.
+	Healthy       bool   `protobuf:"varint,1,opt,name=healthy,proto3" json:"healthy,omitempty"`
+	LeaderId      uint64 `protobuf:"varint,2,opt,name=leader_id,json=leaderId,proto3" json:"leader_id,omitempty"`
+	Status        string `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"` // READY or NOT_READY
+	AppliedIndex  uint64 `protobuf:"varint,4,opt,name=applied_index,json=appliedIndex,proto3" json:"applied_index,omitempty"`
+	CommitIndex   uint64 `protobuf:"varint,5,opt,name=commit_index,json=commitIndex,proto3" json:"commit_index,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *HealthResponse) Reset() {
 	*x = HealthResponse{}
-	mi := &file_coordination_v1_kv_proto_msgTypes[33]
+	mi := &file_coordination_v1_kv_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2269,7 +2407,7 @@ func (x *HealthResponse) String() string {
 func (*HealthResponse) ProtoMessage() {}
 
 func (x *HealthResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coordination_v1_kv_proto_msgTypes[33]
+	mi := &file_coordination_v1_kv_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2282,7 +2420,7 @@ func (x *HealthResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthResponse.ProtoReflect.Descriptor instead.
 func (*HealthResponse) Descriptor() ([]byte, []int) {
-	return file_coordination_v1_kv_proto_rawDescGZIP(), []int{33}
+	return file_coordination_v1_kv_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *HealthResponse) GetHealthy() bool {
@@ -2295,6 +2433,275 @@ func (x *HealthResponse) GetHealthy() bool {
 func (x *HealthResponse) GetLeaderId() uint64 {
 	if x != nil {
 		return x.LeaderId
+	}
+	return 0
+}
+
+func (x *HealthResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *HealthResponse) GetAppliedIndex() uint64 {
+	if x != nil {
+		return x.AppliedIndex
+	}
+	return 0
+}
+
+func (x *HealthResponse) GetCommitIndex() uint64 {
+	if x != nil {
+		return x.CommitIndex
+	}
+	return 0
+}
+
+type TransferLeaderRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	To            uint64                 `protobuf:"varint,1,opt,name=to,proto3" json:"to,omitempty"` // 0: the most up-to-date reachable follower
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TransferLeaderRequest) Reset() {
+	*x = TransferLeaderRequest{}
+	mi := &file_coordination_v1_kv_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TransferLeaderRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TransferLeaderRequest) ProtoMessage() {}
+
+func (x *TransferLeaderRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_coordination_v1_kv_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TransferLeaderRequest.ProtoReflect.Descriptor instead.
+func (*TransferLeaderRequest) Descriptor() ([]byte, []int) {
+	return file_coordination_v1_kv_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *TransferLeaderRequest) GetTo() uint64 {
+	if x != nil {
+		return x.To
+	}
+	return 0
+}
+
+type TransferLeaderResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	LeaderId      uint64                 `protobuf:"varint,1,opt,name=leader_id,json=leaderId,proto3" json:"leader_id,omitempty"` // the leader after the transfer, as this node knows it (0: unknown yet)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TransferLeaderResponse) Reset() {
+	*x = TransferLeaderResponse{}
+	mi := &file_coordination_v1_kv_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TransferLeaderResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TransferLeaderResponse) ProtoMessage() {}
+
+func (x *TransferLeaderResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_coordination_v1_kv_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TransferLeaderResponse.ProtoReflect.Descriptor instead.
+func (*TransferLeaderResponse) Descriptor() ([]byte, []int) {
+	return file_coordination_v1_kv_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *TransferLeaderResponse) GetLeaderId() uint64 {
+	if x != nil {
+		return x.LeaderId
+	}
+	return 0
+}
+
+type SnapshotNowRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SnapshotNowRequest) Reset() {
+	*x = SnapshotNowRequest{}
+	mi := &file_coordination_v1_kv_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SnapshotNowRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SnapshotNowRequest) ProtoMessage() {}
+
+func (x *SnapshotNowRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_coordination_v1_kv_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SnapshotNowRequest.ProtoReflect.Descriptor instead.
+func (*SnapshotNowRequest) Descriptor() ([]byte, []int) {
+	return file_coordination_v1_kv_proto_rawDescGZIP(), []int{37}
+}
+
+type SnapshotNowResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SnapshotIndex uint64                 `protobuf:"varint,1,opt,name=snapshot_index,json=snapshotIndex,proto3" json:"snapshot_index,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SnapshotNowResponse) Reset() {
+	*x = SnapshotNowResponse{}
+	mi := &file_coordination_v1_kv_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SnapshotNowResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SnapshotNowResponse) ProtoMessage() {}
+
+func (x *SnapshotNowResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_coordination_v1_kv_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SnapshotNowResponse.ProtoReflect.Descriptor instead.
+func (*SnapshotNowResponse) Descriptor() ([]byte, []int) {
+	return file_coordination_v1_kv_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *SnapshotNowResponse) GetSnapshotIndex() uint64 {
+	if x != nil {
+		return x.SnapshotIndex
+	}
+	return 0
+}
+
+type CompactRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CompactRequest) Reset() {
+	*x = CompactRequest{}
+	mi := &file_coordination_v1_kv_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompactRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompactRequest) ProtoMessage() {}
+
+func (x *CompactRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_coordination_v1_kv_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompactRequest.ProtoReflect.Descriptor instead.
+func (*CompactRequest) Descriptor() ([]byte, []int) {
+	return file_coordination_v1_kv_proto_rawDescGZIP(), []int{39}
+}
+
+type CompactResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	FirstIndex    uint64                 `protobuf:"varint,1,opt,name=first_index,json=firstIndex,proto3" json:"first_index,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CompactResponse) Reset() {
+	*x = CompactResponse{}
+	mi := &file_coordination_v1_kv_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompactResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompactResponse) ProtoMessage() {}
+
+func (x *CompactResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_coordination_v1_kv_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompactResponse.ProtoReflect.Descriptor instead.
+func (*CompactResponse) Descriptor() ([]byte, []int) {
+	return file_coordination_v1_kv_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *CompactResponse) GetFirstIndex() uint64 {
+	if x != nil {
+		return x.FirstIndex
 	}
 	return 0
 }
@@ -2440,18 +2847,50 @@ const file_coordination_v1_kv_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\x04R\x02id\x12\x1b\n" +
 	"\tpeer_addr\x18\x02 \x01(\tR\bpeerAddr\x12\x1f\n" +
 	"\vclient_addr\x18\x03 \x01(\tR\n" +
-	"clientAddr\"\xd5\x01\n" +
+	"clientAddr\"\xcc\x03\n" +
 	"\x0eStatusResponse\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\x04R\x06nodeId\x12\x1b\n" +
 	"\tleader_id\x18\x02 \x01(\x04R\bleaderId\x12\x12\n" +
 	"\x04term\x18\x03 \x01(\x04R\x04term\x12!\n" +
 	"\fcommit_index\x18\x04 \x01(\x04R\vcommitIndex\x12#\n" +
 	"\rapplied_index\x18\x05 \x01(\x04R\fappliedIndex\x121\n" +
-	"\amembers\x18\x06 \x03(\v2\x17.coordination.v1.MemberR\amembers\"\x0f\n" +
-	"\rHealthRequest\"G\n" +
+	"\amembers\x18\x06 \x03(\v2\x17.coordination.v1.MemberR\amembers\x12\x14\n" +
+	"\x05state\x18\a \x01(\tR\x05state\x121\n" +
+	"\x05peers\x18\b \x03(\v2\x1b.coordination.v1.PeerStatusR\x05peers\x12\x1d\n" +
+	"\n" +
+	"state_hash\x18\t \x01(\fR\tstateHash\x12(\n" +
+	"\x10state_hash_index\x18\n" +
+	" \x01(\x04R\x0estateHashIndex\x12%\n" +
+	"\x0esnapshot_index\x18\v \x01(\x04R\rsnapshotIndex\x12\x1f\n" +
+	"\vfirst_index\x18\f \x01(\x04R\n" +
+	"firstIndex\x12\x1b\n" +
+	"\tuptime_ms\x18\r \x01(\x03R\buptimeMs\"\x81\x01\n" +
+	"\n" +
+	"PeerStatus\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x04R\x02id\x12\x12\n" +
+	"\x04addr\x18\x02 \x01(\tR\x04addr\x12\x1c\n" +
+	"\treachable\x18\x03 \x01(\bR\treachable\x12\x1f\n" +
+	"\vmatch_index\x18\x04 \x01(\x04R\n" +
+	"matchIndex\x12\x10\n" +
+	"\x03lag\x18\x05 \x01(\x04R\x03lag\"\x0f\n" +
+	"\rHealthRequest\"\xa7\x01\n" +
 	"\x0eHealthResponse\x12\x18\n" +
 	"\ahealthy\x18\x01 \x01(\bR\ahealthy\x12\x1b\n" +
-	"\tleader_id\x18\x02 \x01(\x04R\bleaderId*f\n" +
+	"\tleader_id\x18\x02 \x01(\x04R\bleaderId\x12\x16\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\x12#\n" +
+	"\rapplied_index\x18\x04 \x01(\x04R\fappliedIndex\x12!\n" +
+	"\fcommit_index\x18\x05 \x01(\x04R\vcommitIndex\"'\n" +
+	"\x15TransferLeaderRequest\x12\x0e\n" +
+	"\x02to\x18\x01 \x01(\x04R\x02to\"5\n" +
+	"\x16TransferLeaderResponse\x12\x1b\n" +
+	"\tleader_id\x18\x01 \x01(\x04R\bleaderId\"\x14\n" +
+	"\x12SnapshotNowRequest\"<\n" +
+	"\x13SnapshotNowResponse\x12%\n" +
+	"\x0esnapshot_index\x18\x01 \x01(\x04R\rsnapshotIndex\"\x10\n" +
+	"\x0eCompactRequest\"2\n" +
+	"\x0fCompactResponse\x12\x1f\n" +
+	"\vfirst_index\x18\x01 \x01(\x04R\n" +
+	"firstIndex*f\n" +
 	"\vConsistency\x12\x1b\n" +
 	"\x17CONSISTENCY_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18CONSISTENCY_LINEARIZABLE\x10\x01\x12\x1c\n" +
@@ -2470,7 +2909,11 @@ const file_coordination_v1_kv_proto_rawDesc = "" +
 	"\vIncrCounter\x12#.coordination.v1.IncrCounterRequest\x1a$.coordination.v1.IncrCounterResponse2\x9f\x01\n" +
 	"\aCluster\x12I\n" +
 	"\x06Status\x12\x1e.coordination.v1.StatusRequest\x1a\x1f.coordination.v1.StatusResponse\x12I\n" +
-	"\x06Health\x12\x1e.coordination.v1.HealthRequest\x1a\x1f.coordination.v1.HealthResponseBUZSgithub.com/daishakpatel/flowforge/internal/gen/proto/coordination/v1;coordinationv1b\x06proto3"
+	"\x06Health\x12\x1e.coordination.v1.HealthRequest\x1a\x1f.coordination.v1.HealthResponse2\x92\x02\n" +
+	"\x05Admin\x12a\n" +
+	"\x0eTransferLeader\x12&.coordination.v1.TransferLeaderRequest\x1a'.coordination.v1.TransferLeaderResponse\x12X\n" +
+	"\vSnapshotNow\x12#.coordination.v1.SnapshotNowRequest\x1a$.coordination.v1.SnapshotNowResponse\x12L\n" +
+	"\aCompact\x12\x1f.coordination.v1.CompactRequest\x1a .coordination.v1.CompactResponseBUZSgithub.com/daishakpatel/flowforge/internal/gen/proto/coordination/v1;coordinationv1b\x06proto3"
 
 var (
 	file_coordination_v1_kv_proto_rawDescOnce sync.Once
@@ -2485,7 +2928,7 @@ func file_coordination_v1_kv_proto_rawDescGZIP() []byte {
 }
 
 var file_coordination_v1_kv_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_coordination_v1_kv_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
+var file_coordination_v1_kv_proto_msgTypes = make([]protoimpl.MessageInfo, 41)
 var file_coordination_v1_kv_proto_goTypes = []any{
 	(Consistency)(0),               // 0: coordination.v1.Consistency
 	(Compare_Target)(0),            // 1: coordination.v1.Compare.Target
@@ -2522,8 +2965,15 @@ var file_coordination_v1_kv_proto_goTypes = []any{
 	(*StatusRequest)(nil),          // 32: coordination.v1.StatusRequest
 	(*Member)(nil),                 // 33: coordination.v1.Member
 	(*StatusResponse)(nil),         // 34: coordination.v1.StatusResponse
-	(*HealthRequest)(nil),          // 35: coordination.v1.HealthRequest
-	(*HealthResponse)(nil),         // 36: coordination.v1.HealthResponse
+	(*PeerStatus)(nil),             // 35: coordination.v1.PeerStatus
+	(*HealthRequest)(nil),          // 36: coordination.v1.HealthRequest
+	(*HealthResponse)(nil),         // 37: coordination.v1.HealthResponse
+	(*TransferLeaderRequest)(nil),  // 38: coordination.v1.TransferLeaderRequest
+	(*TransferLeaderResponse)(nil), // 39: coordination.v1.TransferLeaderResponse
+	(*SnapshotNowRequest)(nil),     // 40: coordination.v1.SnapshotNowRequest
+	(*SnapshotNowResponse)(nil),    // 41: coordination.v1.SnapshotNowResponse
+	(*CompactRequest)(nil),         // 42: coordination.v1.CompactRequest
+	(*CompactResponse)(nil),        // 43: coordination.v1.CompactResponse
 }
 var file_coordination_v1_kv_proto_depIdxs = []int32{
 	0,  // 0: coordination.v1.GetRequest.consistency:type_name -> coordination.v1.Consistency
@@ -2553,35 +3003,42 @@ var file_coordination_v1_kv_proto_depIdxs = []int32{
 	3,  // 24: coordination.v1.LeaseRevokeRequest.meta:type_name -> coordination.v1.RequestMeta
 	3,  // 25: coordination.v1.IncrCounterRequest.meta:type_name -> coordination.v1.RequestMeta
 	33, // 26: coordination.v1.StatusResponse.members:type_name -> coordination.v1.Member
-	5,  // 27: coordination.v1.KV.Get:input_type -> coordination.v1.GetRequest
-	7,  // 28: coordination.v1.KV.Put:input_type -> coordination.v1.PutRequest
-	9,  // 29: coordination.v1.KV.Delete:input_type -> coordination.v1.DeleteRequest
-	11, // 30: coordination.v1.KV.List:input_type -> coordination.v1.ListRequest
-	13, // 31: coordination.v1.KV.CAS:input_type -> coordination.v1.CASRequest
-	22, // 32: coordination.v1.KV.Txn:input_type -> coordination.v1.TxnRequest
-	24, // 33: coordination.v1.KV.LeaseGrant:input_type -> coordination.v1.LeaseGrantRequest
-	26, // 34: coordination.v1.KV.LeaseKeepAlive:input_type -> coordination.v1.LeaseKeepAliveRequest
-	28, // 35: coordination.v1.KV.LeaseRevoke:input_type -> coordination.v1.LeaseRevokeRequest
-	30, // 36: coordination.v1.KV.IncrCounter:input_type -> coordination.v1.IncrCounterRequest
-	32, // 37: coordination.v1.Cluster.Status:input_type -> coordination.v1.StatusRequest
-	35, // 38: coordination.v1.Cluster.Health:input_type -> coordination.v1.HealthRequest
-	6,  // 39: coordination.v1.KV.Get:output_type -> coordination.v1.GetResponse
-	8,  // 40: coordination.v1.KV.Put:output_type -> coordination.v1.PutResponse
-	10, // 41: coordination.v1.KV.Delete:output_type -> coordination.v1.DeleteResponse
-	12, // 42: coordination.v1.KV.List:output_type -> coordination.v1.ListResponse
-	15, // 43: coordination.v1.KV.CAS:output_type -> coordination.v1.CASResponse
-	23, // 44: coordination.v1.KV.Txn:output_type -> coordination.v1.TxnResponse
-	25, // 45: coordination.v1.KV.LeaseGrant:output_type -> coordination.v1.LeaseGrantResponse
-	27, // 46: coordination.v1.KV.LeaseKeepAlive:output_type -> coordination.v1.LeaseKeepAliveResponse
-	29, // 47: coordination.v1.KV.LeaseRevoke:output_type -> coordination.v1.LeaseRevokeResponse
-	31, // 48: coordination.v1.KV.IncrCounter:output_type -> coordination.v1.IncrCounterResponse
-	34, // 49: coordination.v1.Cluster.Status:output_type -> coordination.v1.StatusResponse
-	36, // 50: coordination.v1.Cluster.Health:output_type -> coordination.v1.HealthResponse
-	39, // [39:51] is the sub-list for method output_type
-	27, // [27:39] is the sub-list for method input_type
-	27, // [27:27] is the sub-list for extension type_name
-	27, // [27:27] is the sub-list for extension extendee
-	0,  // [0:27] is the sub-list for field type_name
+	35, // 27: coordination.v1.StatusResponse.peers:type_name -> coordination.v1.PeerStatus
+	5,  // 28: coordination.v1.KV.Get:input_type -> coordination.v1.GetRequest
+	7,  // 29: coordination.v1.KV.Put:input_type -> coordination.v1.PutRequest
+	9,  // 30: coordination.v1.KV.Delete:input_type -> coordination.v1.DeleteRequest
+	11, // 31: coordination.v1.KV.List:input_type -> coordination.v1.ListRequest
+	13, // 32: coordination.v1.KV.CAS:input_type -> coordination.v1.CASRequest
+	22, // 33: coordination.v1.KV.Txn:input_type -> coordination.v1.TxnRequest
+	24, // 34: coordination.v1.KV.LeaseGrant:input_type -> coordination.v1.LeaseGrantRequest
+	26, // 35: coordination.v1.KV.LeaseKeepAlive:input_type -> coordination.v1.LeaseKeepAliveRequest
+	28, // 36: coordination.v1.KV.LeaseRevoke:input_type -> coordination.v1.LeaseRevokeRequest
+	30, // 37: coordination.v1.KV.IncrCounter:input_type -> coordination.v1.IncrCounterRequest
+	32, // 38: coordination.v1.Cluster.Status:input_type -> coordination.v1.StatusRequest
+	36, // 39: coordination.v1.Cluster.Health:input_type -> coordination.v1.HealthRequest
+	38, // 40: coordination.v1.Admin.TransferLeader:input_type -> coordination.v1.TransferLeaderRequest
+	40, // 41: coordination.v1.Admin.SnapshotNow:input_type -> coordination.v1.SnapshotNowRequest
+	42, // 42: coordination.v1.Admin.Compact:input_type -> coordination.v1.CompactRequest
+	6,  // 43: coordination.v1.KV.Get:output_type -> coordination.v1.GetResponse
+	8,  // 44: coordination.v1.KV.Put:output_type -> coordination.v1.PutResponse
+	10, // 45: coordination.v1.KV.Delete:output_type -> coordination.v1.DeleteResponse
+	12, // 46: coordination.v1.KV.List:output_type -> coordination.v1.ListResponse
+	15, // 47: coordination.v1.KV.CAS:output_type -> coordination.v1.CASResponse
+	23, // 48: coordination.v1.KV.Txn:output_type -> coordination.v1.TxnResponse
+	25, // 49: coordination.v1.KV.LeaseGrant:output_type -> coordination.v1.LeaseGrantResponse
+	27, // 50: coordination.v1.KV.LeaseKeepAlive:output_type -> coordination.v1.LeaseKeepAliveResponse
+	29, // 51: coordination.v1.KV.LeaseRevoke:output_type -> coordination.v1.LeaseRevokeResponse
+	31, // 52: coordination.v1.KV.IncrCounter:output_type -> coordination.v1.IncrCounterResponse
+	34, // 53: coordination.v1.Cluster.Status:output_type -> coordination.v1.StatusResponse
+	37, // 54: coordination.v1.Cluster.Health:output_type -> coordination.v1.HealthResponse
+	39, // 55: coordination.v1.Admin.TransferLeader:output_type -> coordination.v1.TransferLeaderResponse
+	41, // 56: coordination.v1.Admin.SnapshotNow:output_type -> coordination.v1.SnapshotNowResponse
+	43, // 57: coordination.v1.Admin.Compact:output_type -> coordination.v1.CompactResponse
+	43, // [43:58] is the sub-list for method output_type
+	28, // [28:43] is the sub-list for method input_type
+	28, // [28:28] is the sub-list for extension type_name
+	28, // [28:28] is the sub-list for extension extendee
+	0,  // [0:28] is the sub-list for field type_name
 }
 
 func init() { file_coordination_v1_kv_proto_init() }
@@ -2616,9 +3073,9 @@ func file_coordination_v1_kv_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_coordination_v1_kv_proto_rawDesc), len(file_coordination_v1_kv_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   34,
+			NumMessages:   41,
 			NumExtensions: 0,
-			NumServices:   2,
+			NumServices:   3,
 		},
 		GoTypes:           file_coordination_v1_kv_proto_goTypes,
 		DependencyIndexes: file_coordination_v1_kv_proto_depIdxs,

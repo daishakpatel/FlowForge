@@ -313,3 +313,25 @@ Format: Context → Decision → Alternatives considered → Consequences.
   - **Tests:** the 04.03 lease test's expected expiries changed with the formula, and 04.04's expiry test moved its boundary by 1 ms.
   - **Tested by:** `TestLeases_*` (fsm), `TestLeases_ExpiryJudgedByLeaderClockAndSwept`, `TestElector_StepsDownBeforeTheServerExpires`, `TestRegistry_*`.
 
+### ADR-002 / ADR-019 amendment — 04.06 — 2026-11-22
+- **What:** compatible extensions for operating the Raft cluster.
+  - **`Cluster.Status`** gains `state`, `peers` (match index, lag, reachable), `state_hash`@`state_hash_index`, `snapshot_index`, `first_index` and `uptime_ms`.
+  - **`Cluster.Health`** gains `status` (`READY`/`NOT_READY`: within 100 applied entries of the leader's commit, which the node records from appends and heartbeats) and the applied and commit indexes.
+  - **A new `Admin` gRPC service** (`TransferLeader`, `SnapshotNow`, `Compact`), gated by `FF_RAFT_ADMIN_TOKEN`.
+  - **Config:** `FF_RAFT_SNAPSHOT_ENTRIES` and `FF_RAFT_SNAPSHOT_TRAILING` are mapped.
+  - **Node:** `node.Node` gains `SnapshotNow`, `CompactNow` and new `Status` fields. A heartbeat whose commit index is past the node's log is capped at the node's commit.
+  - **Compose:** services `raft-1..3` (profile `raft`).
+- **Why:**
+  - **Status, Health, Admin and config:** task 04.06 asks for them.
+  - **The heartbeat cap:** a node restarted with an empty data directory under its old id otherwise panics in the raft library ("tocommit out of range"). The cap only withholds a commit; it never commits anything the leader didn't.
+  - **The wipe procedure:** recovering such a node needs a leadership transfer, because raft never lowers a match index (runbook `raft-quorum-loss.md`). It is not safe in general: a wiped node has forgotten its log and vote, which can lose a committed write. It is documented as a guarded last resort (one node, a live leader, the other follower at lag 0); the safe fix is dynamic membership (FR-RAFT-11).
+- **Impact:**
+  - **Compatibility:** proto fields and the service are added only; existing fields keep their meaning.
+  - **Health:** it is now stricter than in 04.04 (it also requires the node to be within the lag bound).
+  - **Ports:** the in-container client port is 00E §6's `7000`, published as host `7001`–`7003`; the peer port is `7100`, internal only. The task text had peer 7000 and client 7001–7003; 00E wins.
+  - **Tested by:**
+    - `TestNode_SnapshotNowAndCompactNow`, `_AutomaticSnapshotCompactsTheLog`, `_StatusReportsStateAndPeerProgress` and `_WipedFollowerSurvivesAndCatchesUp`;
+    - `TestStatus_*`, `TestHealth_*`, `TestAdmin_*` and `TestSnapshot_WipedFollowerRecoversViaSnapshot`;
+    - `TestAdminAndMetrics_AgainstACluster`;
+    - `TestCompose_ClusterServesSurvivesALeaderKillAndTransfers`.
+

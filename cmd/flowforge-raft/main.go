@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -50,6 +51,9 @@ const (
 )
 
 func main() {
+	if len(os.Args) > 1 && !strings.HasPrefix(os.Args[1], "-") { // an operator subcommand (admin.go)
+		os.Exit(runAdmin(context.Background(), os.Args[1:], config.Options{}, os.Stdout, os.Stderr))
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	err := run(ctx, config.Options{}, os.Stderr, (&net.ListenConfig{}).Listen)
 	stop()
@@ -129,7 +133,10 @@ func wire(cfg config.Raft, peers []node.Peer, cluster uint64, st storage.Storage
 		return nil, err
 	}
 	f := fsm.New(fsm.Options{})
-	n, err := node.New(node.Config{ID: cfg.NodeID, Peers: peers, Logger: logger, Metrics: nm}, st, fsm.NewApplier(f))
+	n, err := node.New(node.Config{
+		ID: cfg.NodeID, Peers: peers, Logger: logger, Metrics: nm,
+		SnapshotEntries: cfg.SnapshotEntries, SnapshotTrailing: cfg.SnapshotTrailing,
+	}, st, fsm.NewApplier(f))
 	if err != nil {
 		return nil, err
 	}
@@ -144,6 +151,7 @@ func wire(cfg config.Raft, peers []node.Peer, cluster uint64, st storage.Storage
 	}
 	srv, err := server.New(server.Config{
 		NodeID: cfg.NodeID, Members: members, ProposalTimeout: cfg.ProposalTimeout, Logger: logger, Metrics: sm,
+		AdminToken: cfg.AdminToken.Reveal(),
 	}, n, f)
 	if err != nil {
 		return nil, err

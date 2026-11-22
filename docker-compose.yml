@@ -42,6 +42,61 @@ services:
       timeout: 3s
       retries: 30
 
+  # 3-node Raft KV (task 04.06): static peers on the internal network. The client port 7000 is
+  # published on the host as 7001-7003; the peer port 7100 is never published. The admin token is
+  # a dev-only default (FF_RAFT_ADMIN_TOKEN). Map: docs/architecture/raft-operations.md.
+  raft-1: &raft
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.raft
+    image: flowforge-raft:dev
+    profiles: [raft, full]
+    environment: &raft-env
+      FF_RAFT_NODE_ID: "1"
+      FF_RAFT_PEERS: 1=raft-1:7100,2=raft-2:7100,3=raft-3:7100
+      FF_RAFT_DATA_DIR: /data
+      FF_RAFT_CLIENT_ADDR: ":7000"
+      FF_RAFT_PEER_ADDR: ":7100"
+      FF_RAFT_HTTP_ADDR: ":8083"
+      FF_RAFT_SNAPSHOT_ENTRIES: ${FF_RAFT_SNAPSHOT_ENTRIES:-10000}
+      FF_RAFT_SNAPSHOT_TRAILING: ${FF_RAFT_SNAPSHOT_TRAILING:-1000}
+      FF_RAFT_ADMIN_TOKEN: ${FF_RAFT_ADMIN_TOKEN:-dev-only-raft-admin-token}
+      FF_LOG_FORMAT: text
+    ports:
+      - "127.0.0.1:7001:7000"
+    volumes:
+      - raft1data:/data
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/flowforge-raft", "health", "--addr", "127.0.0.1:7000"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    restart: "no"
+
+  raft-2:
+    <<: *raft
+    environment:
+      <<: *raft-env
+      FF_RAFT_NODE_ID: "2"
+    ports:
+      - "127.0.0.1:7002:7000"
+    volumes:
+      - raft2data:/data
+
+  raft-3:
+    <<: *raft
+    environment:
+      <<: *raft-env
+      FF_RAFT_NODE_ID: "3"
+    ports:
+      - "127.0.0.1:7003:7000"
+    volumes:
+      - raft3data:/data
+
 volumes:
   pgdata:
   mddata:
+  raft1data:
+  raft2data:
+  raft3data:

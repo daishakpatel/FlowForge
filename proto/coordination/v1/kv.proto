@@ -54,6 +54,20 @@ service Cluster {
   rpc Health(HealthRequest) returns (HealthResponse);
 }
 
+// Admin is operator tooling (task 04.06): dev/ops only. Every call needs the metadata
+// "authorization: Bearer <FF_RAFT_ADMIN_TOKEN>"; with no token configured the service refuses
+// everything (PERMISSION_DENIED). Read-only inspection is Cluster.Status.
+service Admin {
+  // TransferLeader asks this node, which must lead, to hand leadership to another voter
+  // (0: the most up-to-date reachable follower) and waits until it no longer leads.
+  rpc TransferLeader(TransferLeaderRequest) returns (TransferLeaderResponse);
+  // SnapshotNow snapshots the state machine at this node's applied index and compacts the log
+  // to the configured trailing entries.
+  rpc SnapshotNow(SnapshotNowRequest) returns (SnapshotNowResponse);
+  // Compact drops this node's whole log up to its latest snapshot.
+  rpc Compact(CompactRequest) returns (CompactResponse);
+}
+
 // Consistency of a read.
 enum Consistency {
   CONSISTENCY_UNSPECIFIED = 0; // treated as LINEARIZABLE
@@ -270,11 +284,52 @@ message StatusResponse {
   uint64 commit_index = 4;
   uint64 applied_index = 5;
   repeated Member members = 6;
+  string state = 7; // LEADER, FOLLOWER, CANDIDATE or PRE_CANDIDATE (04.06)
+  repeated PeerStatus peers = 8; // the leader's view of every voter; empty on a follower
+  bytes state_hash = 9; // SHA-256 of the state machine's canonical state at state_hash_index
+  uint64 state_hash_index = 10;
+  uint64 snapshot_index = 11; // this node's latest snapshot
+  uint64 first_index = 12; // the first entry still in this node's log
+  int64 uptime_ms = 13; // since this server started
+}
+
+// PeerStatus is a voter's replication progress, as the leader sees it.
+message PeerStatus {
+  uint64 id = 1;
+  string addr = 2; // peer address
+  bool reachable = 3; // heard from within the last election timeout
+  uint64 match_index = 4; // highest index known replicated to it
+  uint64 lag = 5; // the leader's commit index minus match_index (0 when ahead)
 }
 
 message HealthRequest {}
 
 message HealthResponse {
-  bool healthy = 1; // a leader is known and this node applies committed entries
+  // healthy: a leader is known and this node has applied to within 100 entries of its commit
+  // index (04.06; status READY), so it can serve linearizable traffic soon.
+  bool healthy = 1;
   uint64 leader_id = 2;
+  string status = 3; // READY or NOT_READY
+  uint64 applied_index = 4;
+  uint64 commit_index = 5;
+}
+
+message TransferLeaderRequest {
+  uint64 to = 1; // 0: the most up-to-date reachable follower
+}
+
+message TransferLeaderResponse {
+  uint64 leader_id = 1; // the leader after the transfer, as this node knows it (0: unknown yet)
+}
+
+message SnapshotNowRequest {}
+
+message SnapshotNowResponse {
+  uint64 snapshot_index = 1;
+}
+
+message CompactRequest {}
+
+message CompactResponse {
+  uint64 first_index = 1;
 }

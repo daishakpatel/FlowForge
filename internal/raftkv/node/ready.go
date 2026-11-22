@@ -69,12 +69,16 @@ func (n *Node) installSnapshot(snap *pb.Snapshot) error {
 			delete(n.waiters, id)
 		}
 	}
-	n.applied, n.snapIndex = idx, idx
+	n.applied, n.snapIndex, n.firstIndex = idx, idx, idx+1
 	n.confState = snap.GetMetadata().GetConfState()
 	return nil
 }
 
 func (n *Node) applyCommitted(ents []*pb.Entry) error {
+	if len(ents) > 0 {
+		start := n.cfg.Clock.Now()
+		defer func() { n.cfg.Metrics.applyDone(n.cfg.Clock.Now().Sub(start).Seconds()) }()
+	}
 	for _, e := range ents {
 		idx := e.GetIndex()
 		if idx <= n.applied {
@@ -149,17 +153,22 @@ func (n *Node) snapshot() error {
 		return fmt.Errorf("save snapshot: %w", err)
 	}
 	n.snapIndex = n.applied
+	n.cfg.Metrics.snapshotted()
 	if n.applied <= n.cfg.SnapshotTrailing {
 		return nil
 	}
-	first, err := n.st.FirstIndex()
-	if err != nil {
-		return fmt.Errorf("first index: %w", err)
+	return n.compact(n.applied - n.cfg.SnapshotTrailing)
+}
+
+// compact drops the log up to and including to (at or before the latest snapshot), unless it is
+// already gone.
+func (n *Node) compact(to uint64) error {
+	if to < n.firstIndex {
+		return nil
 	}
-	if to := n.applied - n.cfg.SnapshotTrailing; to >= first {
-		if err := n.st.Compact(to); err != nil {
-			return fmt.Errorf("compact to %d: %w", to, err)
-		}
+	if err := n.st.Compact(to); err != nil {
+		return fmt.Errorf("compact to %d: %w", to, err)
 	}
+	n.firstIndex = to + 1
 	return nil
 }
