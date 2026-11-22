@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -195,7 +196,17 @@ func TestCluster_FollowerRejectsWithLeaderHint(t *testing.T) {
 
 func TestCluster_NoQuorumAppliesNothing(t *testing.T) {
 	forSeeds(t, func(t *testing.T, seed int64) {
-		c := nodetest.New(t, nodetest.Options{Seed: seed})
+		// appended is closed once a node sends a MsgApp carrying entries after armed is set: the
+		// leader has accepted the stranded proposal. Ticking before that let CheckQuorum step it
+		// down first, so the proposal failed with the definite ErrNoQuorum (a flake, fixed in 04.04).
+		var armed atomic.Bool
+		appended := make(chan struct{})
+		var once sync.Once
+		c := nodetest.New(t, nodetest.Options{Seed: seed, OnSend: func(m *pb.Message) {
+			if armed.Load() && m.GetType() == pb.MessageType_MsgApp && len(m.GetEntries()) > 0 {
+				once.Do(func() { close(appended) })
+			}
+		}})
 		lead := c.WaitLeader(electionTimeouts)
 		mustPropose(t, c, lead, "committed")
 		converge(t, c, 20)
@@ -204,10 +215,16 @@ func TestCluster_NoQuorumAppliesNothing(t *testing.T) {
 		}
 		pctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
+		armed.Store(true)
 		go func() {
 			_, err := c.Node(lead).Propose(pctx, []byte("stranded"))
 			done <- err
 		}()
+		select {
+		case <-appended:
+		case <-ctx(t).Done():
+			t.Fatal("the leader never appended the stranded proposal")
+		}
 		// CheckQuorum: without a quorum the leader steps down within an election timeout.
 		if !c.TickUntil(func() bool { return !c.Node(lead).Status().IsLeader }, electionTimeouts) {
 			t.Fatal("leader without quorum did not step down")

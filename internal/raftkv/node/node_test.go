@@ -129,7 +129,11 @@ func TestNode_ProposeWaitsForApply(t *testing.T) {
 	if l := s.app.list(); len(l) != 1 || l[0].Index != res.Index {
 		t.Fatalf("applied = %v, want entry %d", l, res.Index)
 	}
-	if st := s.n.Status(); st.Applied < res.Index || st.Commit < res.Index || st.Leader != 1 || st.LeaderAddr != "n1:7001" {
+	// Status is published after the loop iteration that applied the entry, so it can trail
+	// Propose's return by an instant (a flake under -race, fixed in 04.04).
+	var st Status
+	if !testutil.Eventually(func() bool { st = s.n.Status(); return st.Applied >= res.Index }, 5*time.Second, time.Millisecond) ||
+		st.Commit < res.Index || st.Leader != 1 || st.LeaderAddr != "n1:7001" {
 		t.Errorf("status = %+v", st)
 	}
 	// The applier's error is the command's result, not a proposal failure.
