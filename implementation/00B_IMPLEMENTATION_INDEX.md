@@ -512,7 +512,7 @@ Tick when the task's completion report exists and all acceptance criteria are me
 
 - [x] `04.01` Raft KV foundations: protobuf contracts and durable storage (WAL, hard state, snapshots) — `phase-04-raft-coordination/04.01_raftkv_proto_storage.md`
 - [x] `04.02` Raft node core: Ready loop, transport, proposals, membership (static) — `phase-04-raft-coordination/04.02_raft_node_core.md`
-- [ ] `04.03` Deterministic KV state machine: CAS/Txn, leases, counters, dedupe, snapshots — `phase-04-raft-coordination/04.03_kv_state_machine_snapshots.md`
+- [x] `04.03` Deterministic KV state machine: CAS/Txn, leases, counters, dedupe, snapshots — `phase-04-raft-coordination/04.03_kv_state_machine_snapshots.md`
 - [ ] `04.04` KV gRPC server, linearizable reads, leader redirect and Go client — `phase-04-raft-coordination/04.04_kv_grpc_server_reads_client.md`
 - [ ] `04.05` Coordination library: leader election, fencing epochs, worker leases — `phase-04-raft-coordination/04.05_coordination_library.md`
 - [ ] `04.06` 3-node Raft cluster in Compose: cluster status, health, metrics, operator tooling — `phase-04-raft-coordination/04.06_cluster_compose_status_metrics.md`
