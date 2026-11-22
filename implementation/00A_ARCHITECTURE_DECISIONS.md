@@ -277,3 +277,23 @@ Format: Context → Decision → Alternatives considered → Consequences.
   - Compatible: no schema, API or configuration change, and the bound is unchanged.
   - A worker that is alive but cannot heartbeat for the bound loses its attempts, as it already did through lease expiry, which is shorter.
   - Tested by `TestWorkerLoss_FallbackForRestartedWorker` (it failed before the fix: the attempt stayed `RUNNING`), the other `TestWorkerLoss_*` tests, and the e2e scenarios `TestWorkerRestartedWithSameID` and `TestSoakChaos`.
+
+### ADR-006 / ADR-005 amendment — 04.04 — 2026-11-21
+- **What:** compatible extensions of the Raft KV contract.
+  - **Proto fields:** `GetResponse` and `ListResponse` gain `applied_index`, `leader_now_ms` and `stale`. `ListRequest.start_key` and `ListResponse.next_key` page a listing.
+  - **Error metadata:** KV errors carry ErrorInfo metadata `result_code`, the FSM outcome, for example `LEASE_EXPIRED`.
+  - **Config:** `FF_RAFT_PROPOSAL_TIMEOUT` (`3s`) and `FF_RAFT_HTTP_ADDR` (`:8083`).
+  - **Leadership transfer:** `node.Node.TransferLeadership`.
+  - **Paged listing:** `fsm.FSM.ListFrom`.
+  - **Server metrics:** `flowforge_raft_requests_total{method,code}`, `flowforge_raft_request_duration_seconds{method}`, `flowforge_raft_read_index_duration_seconds` and `flowforge_raft_leases_swept_total{outcome}`.
+- **Why:** each one is something task 04.04 needs.
+  - **`applied_index`, `leader_now_ms`, `stale`, `next_key`:** the task requires them on read responses, and the 04.01 proto lacked them.
+  - **`result_code`:** separates `LEASE_EXPIRED` (re-grant) from `LEASE_NOT_FOUND` behind the single `NOT_FOUND` code that 00E §4 allows.
+  - **`FF_RAFT_PROPOSAL_TIMEOUT`:** the task names it.
+  - **`FF_RAFT_HTTP_ADDR`:** the binary must serve its `obs` endpoints somewhere, and 00E §6 had no port for them. `:8083` follows the API (8080), scheduler (8081) and worker (8082).
+  - **`TransferLeadership`:** the binary's graceful shutdown needs it.
+  - **`ListFrom`:** makes `next_key` possible.
+- **Impact:**
+  - **Compatible:** fields and methods are added only; no existing field, signature or behaviour changes.
+  - **Unchanged config:** `FF_RAFT_PEERS` keeps its format. Nodes still know each other only by peer address, so `leader_hint` stays a node id. The client maps ids to endpoints with `Cluster.Status`.
+  - **Tested by:** `TestTransferLeadership_*`, `TestListFrom_ContinuesAtStartKey`, `TestLoad_RaftServerDefaults` and the `internal/raftkv/server` and `internal/raftkv/client` suites.

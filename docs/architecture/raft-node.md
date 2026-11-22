@@ -119,6 +119,16 @@ It fails in two ways:
 
 Raft never retransmits a lost `MsgReadIndex` or its response. So every election timeout, a read that is still unconfirmed is handed to raft again under the same key, which the leader ignores if it already holds it (`TestCluster_ReadIndexSurvivesALostRequest`).
 
+## Leadership transfer
+
+`TransferLeadership(ctx, to)` (added by 04.04 for `flowforge-raft`'s graceful shutdown) asks the leader to hand off to voter `to`, or with `0` to the follower with the most replicated log, and waits until another node leads.
+
+- **Best effort:** raft abandons a transfer after an election timeout, so the request is renewed until `ctx` ends; a node that is still leader then returns `ctx`'s error.
+- **On a follower:** it returns the `NotLeaderError` (or `ErrNoQuorum`).
+- **While pending:** raft drops proposals (`ErrProposalDropped`), which clients retry.
+
+Tests: `TestTransferLeadership_*` (20 seeds; a named target; refused on a follower; gives up at the deadline when partitioned).
+
 ## Transport
 
 `transport.GRPC` implements `RaftPeer.Stream` (`proto/coordination/v1/raft.proto`).

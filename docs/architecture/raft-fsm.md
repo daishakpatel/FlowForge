@@ -137,7 +137,7 @@ How the format is checked:
 
 ## Reads
 
-`Get`, `List(prefix, limit)` (key order), `GetLease`, `IsExpired`, `ExpiredLeaseIDs` and `AppliedIndex` read under a read lock and return copies. Each sees the state between two applies.
+`Get`, `List(prefix, limit)` (key order), `ListFrom(prefix, start, limit)` (a page from `start`, for 04.04's `next_key`), `GetLease`, `IsExpired`, `ExpiredLeaseIDs` and `AppliedIndex` read under a read lock and return copies. Each sees the state between two applies.
 
 - **Linearizable reads:** a ReadIndex on the node first (04.04).
 - **Lease-bound keys:** a key bound to an expired lease is still returned. The caller judges its expiry.
