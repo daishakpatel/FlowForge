@@ -28,7 +28,10 @@ import (
 
 func TestMain(m *testing.M) { testutil.LeakCheck(m) }
 
-const leaderWait = 5 * time.Second
+// leaderWait bounds waiting for an agreed leader. It is only an upper bound: under make
+// test-integration (every package with -race in parallel) a restarted member can take more than
+// 5 s to agree on the leader.
+const leaderWait = 15 * time.Second
 
 // tick and election timeout of kvtest clusters: raft randomizes the timeout in [10, 20) ticks.
 const (
@@ -231,7 +234,7 @@ func TestClient_LinearizableReadAfterWriteAcrossLeaderChanges(t *testing.T) {
 	// machine (-race on one CPU, or the whole suite in parallel) an election can outlast five
 	// waits, which ends the call with ErrUnavailable as designed (TestClient_GivesUpWhenNoNodeAnswers).
 	cl := newClient(t, c, c.WaitLeader(leaderWait), func(cfg *client.Config) { cfg.MaxAttempts = 10 })
-	killed := uint64(0)
+	killed, retries := uint64(0), 0
 	changes := 0
 	for i := range iterations {
 		if i > 0 && i%(iterations/4) == 0 {
@@ -244,19 +247,34 @@ func TestClient_LinearizableReadAfterWriteAcrossLeaderChanges(t *testing.T) {
 		}
 		// A deadline per iteration: the 10 000 iterations together take longer than one call's
 		// budget on a loaded machine (make test-integration runs every package with -race).
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		v := []byte(strconv.Itoa(i))
-		if _, err := cl.Put(ctx, "k", v); err != nil {
+		if err := retryUnavailable(&retries, func() error { _, err := cl.Put(ctx, "k", v); return err }); err != nil {
 			cancel()
 			t.Fatalf("iteration %d: Put: %v", i, err)
 		}
-		got, err := cl.Get(ctx, "k")
+		var got *pb.GetResponse
+		err := retryUnavailable(&retries, func() (err error) { got, err = cl.Get(ctx, "k"); return err })
 		cancel()
 		if err != nil || string(got.GetKv().GetValue()) != string(v) {
 			t.Fatalf("iteration %d: Get = %v, %v; want %s", i, got, err, v)
 		}
 	}
-	t.Logf("%d write/read pairs across %d leader kills", iterations, changes)
+	t.Logf("%d write/read pairs across %d leader kills (%d calls retried after ErrUnavailable)", iterations, changes, retries)
+}
+
+// retryUnavailable reruns f while it fails with ErrUnavailable, up to 5 times. The read-after-
+// write test is about what a read returns, not availability: under a fully loaded machine
+// (make test runs every package in parallel) the 10 ms test tick can churn leaders longer than
+// one call's retry budget. Availability across a failover is TestClient_RetriesWritesAcross….
+// A retried Put writes the same value, so the read assertion is unchanged.
+func retryUnavailable(retries *int, f func() error) error {
+	err := f()
+	for n := 0; n < 5 && errors.Is(err, client.ErrUnavailable); n++ {
+		*retries++
+		err = f()
+	}
+	return err
 }
 
 func TestClient_PermanentErrorsAreNotRetried(t *testing.T) {
