@@ -3,6 +3,7 @@ module github.com/daishakpatel/flowforge
 go 1.27.3
 
 require (
+	github.com/anishathalye/porcupine v1.3.1
 	github.com/getkin/kin-openapi v0.153.0
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/jackc/pgx/v5 v5.12.0
