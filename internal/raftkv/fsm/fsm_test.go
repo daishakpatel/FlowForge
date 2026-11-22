@@ -289,31 +289,35 @@ func TestLeases_Lifecycle(t *testing.T) {
 	keep := func(ts int64, fencing uint64) *pb.CommandResult {
 		return x.apply(ts, nil, &pb.Command{Op: &pb.Command_LeaseKeepAlive{LeaseKeepAlive: &pb.LeaseKeepAliveRequest{LeaseId: id, FencingToken: fencing}}})
 	}
-	// Keep-alive extends from max(expiry, ts) and never moves expiry backwards.
-	if r := keep(12_000, 1); r.GetExpiresAtMs() != 20_000 {
+	// Keep-alive extends from its own timestamp (00E §5.2: expires_at = ts + ttl) and never moves
+	// expiry backwards: max(expires_at, ts + ttl). Renewals within the TTL don't accumulate.
+	if r := keep(12_000, 1); r.GetExpiresAtMs() != 17_000 {
 		t.Fatalf("keep-alive at 12s: %v", r)
 	}
-	if r := keep(1_000, 1); r.GetExpiresAtMs() != 25_000 { // an old timestamp still extends from the expiry
+	if r := keep(13_000, 1); r.GetExpiresAtMs() != 18_000 {
+		t.Fatalf("keep-alive at 13s: %v", r)
+	}
+	if r := keep(1_000, 1); r.GetExpiresAtMs() != 18_000 { // an old timestamp leaves the expiry alone
 		t.Fatalf("keep-alive with an old ts: %v", r)
 	}
 	code(t, keep(13_000, 99), pb.ResultCode_RESULT_CODE_LEASE_NOT_FOUND) // wrong fencing token
 	// Expiry is judged by the reader's clock, never the FSM's.
-	if x.f.IsExpired(id, 24_999) || !x.f.IsExpired(id, 25_000) || !x.f.IsExpired(999, 0) {
+	if x.f.IsExpired(id, 17_999) || !x.f.IsExpired(id, 18_000) || !x.f.IsExpired(999, 0) {
 		t.Error("IsExpired")
 	}
-	if got := x.f.ExpiredLeaseIDs(25_000); !slices.Equal(got, []uint64{id}) {
+	if got := x.f.ExpiredLeaseIDs(18_000); !slices.Equal(got, []uint64{id}) {
 		t.Errorf("ExpiredLeaseIDs = %v", got)
 	}
 	expire := func(ts int64) *pb.CommandResult {
 		return x.apply(ts, nil, &pb.Command{Op: &pb.Command_LeaseExpire{LeaseExpire: &pb.LeaseExpire{LeaseId: id}}})
 	}
-	if r := expire(24_999); r.GetCode() != pb.ResultCode_RESULT_CODE_OK || r.GetDeleted() {
+	if r := expire(17_999); r.GetCode() != pb.ResultCode_RESULT_CODE_OK || r.GetDeleted() {
 		t.Fatalf("early expire changed something: %v", r)
 	}
 	if _, ok := x.f.Get("w/1"); !ok {
 		t.Fatal("early expire deleted a key")
 	}
-	if r := expire(25_000); !r.GetDeleted() {
+	if r := expire(18_000); !r.GetDeleted() {
 		t.Fatalf("expire at expiry: %v", r)
 	}
 	if _, ok := x.f.Get("w/1"); ok {

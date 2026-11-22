@@ -324,7 +324,7 @@ func TestLeases_ExpiryJudgedByLeaderClockAndSwept(t *testing.T) {
 	if _, err := f.kv.Get(ctx, &pb.GetRequest{Key: "bound"}); err != nil {
 		t.Fatalf("Get before expiry: %v", err)
 	}
-	// Keep-alive at t+999 extends to max(t+1000, t+999) + 1000 = t+2000.
+	// Keep-alive at t+999 extends from its own time: max(t+1000, t+999+1000) = t+1999.
 	if _, err := f.kv.LeaseKeepAlive(ctx, &pb.LeaseKeepAliveRequest{LeaseId: g.GetLeaseId(), FencingToken: g.GetFencingToken()}); err != nil {
 		t.Fatalf("keep-alive: %v", err)
 	}
@@ -333,7 +333,7 @@ func TestLeases_ExpiryJudgedByLeaderClockAndSwept(t *testing.T) {
 		t.Fatalf("Get after keep-alive: %v", err)
 	}
 	fsm := f.c.Member(f.lead).FSM
-	clk.Advance(2 * time.Millisecond) // t+2000 = expires_at
+	clk.Advance(time.Millisecond) // t+1999 = expires_at
 	_, err = f.kv.Get(ctx, &pb.GetRequest{Key: "bound"})
 	wantErr(t, err, codes.NotFound, "NOT_FOUND", "")
 	if list, err := f.kv.List(ctx, &pb.ListRequest{}); err != nil || len(list.GetKvs()) != 0 {
@@ -346,7 +346,7 @@ func TestLeases_ExpiryJudgedByLeaderClockAndSwept(t *testing.T) {
 	if _, ok := fsm.Get("bound"); !ok {
 		t.Fatal("key deleted before any sweep")
 	}
-	clk.Advance(8 * time.Second) // t+10s: the sweeper's first tick
+	clk.Advance(8*time.Second + time.Millisecond) // t+10s: the sweeper's first tick
 	fftest.WaitFor(t, func() bool { _, ok := fsm.Get("bound"); return !ok }, leaderWait)
 	if _, ok := fsm.GetLease(g.GetLeaseId()); ok {
 		t.Fatal("lease still present after the sweep")

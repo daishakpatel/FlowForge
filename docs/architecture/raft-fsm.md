@@ -34,7 +34,7 @@ A Raft entry's data is a `Command` (`proto/coordination/v1/command.proto`): `met
 | `CAS` | `expected_version` (0 = must not exist), then write `value` (optionally on a lease) or delete. A delete needs `expected_version > 0` and no `lease_id` (`INVALID_ARGUMENT`) |
 | `Txn` | Evaluates every compare (version, value or lease; `=`, `≠`, `>`, `<`), then runs `success` if all hold, else `failure`. **Absent keys:** a value compare never holds, as in etcd; compare the version with 0 to test absence. **Validation:** both branches are checked for shape and sizes whichever runs, and the chosen branch is also checked for leases and quotas before any op runs, so a Txn runs every op or none. Later ops see earlier ones' writes. **Limits:** at most 8 compares, and at most 8 ops across both branches (`TXN_TOO_LARGE`) |
 | `LeaseGrant` | TTL from 1 ms to 24 h. `lease_id` comes from a counter, `fencing_token` from the **global fencing counter** (strictly increasing across every grant, and across snapshot/restore), and `expires_at = ts + ttl` |
-| `LeaseKeepAlive` | The fencing token must match the grant's (`LEASE_NOT_FOUND`). `expires_at = max(expires_at, ts) + ttl`, so expiry never moves backwards. A lease past its expiry that no `LeaseExpire` has removed yet can still be extended (task 04.03 rejects only an expired *and* removed lease). Safety doesn't depend on this, because Postgres fences every action a lease holder takes (ADR-003) |
+| `LeaseKeepAlive` | The fencing token must match the grant's (`LEASE_NOT_FOUND`). `expires_at = max(expires_at, ts + ttl)`: it counts from the keep-alive's own timestamp (00E §5.2), so renewals more frequent than the TTL don't push expiry further out, and it never moves backwards. (04.05 fixed an earlier `max(expires_at, ts) + ttl`, which added a TTL per renewal.) A lease past its expiry that no `LeaseExpire` has removed yet can still be extended (task 04.03 rejects only an expired *and* removed lease). Safety doesn't depend on this, because Postgres fences every action a lease holder takes (ADR-003) |
 | `LeaseRevoke` | Deletes the lease and every key bound to it |
 | `LeaseExpire` | Proposed by the leader's sweeper (04.04). It deletes the lease and its keys only if `expires_at <= ts`. Otherwise, or for an unknown lease, it is `OK` with no change, so it is idempotent |
 | `IncrCounter` | Returns the new value (1 on first use). Counters only grow and never wrap |
@@ -82,7 +82,7 @@ The per-key limits alone would allow about 25 GiB, so the two byte budgets are w
 
 ```text
 LeaseGrant@ts       → expires_at = ts + ttl
-KeepAlive@ts        → expires_at = max(expires_at, ts) + ttl   (never moves backwards)
+KeepAlive@ts        → expires_at = max(expires_at, ts + ttl)   (from its own ts; never backwards)
 LeaseExpire(id)@ts  → if expires_at <= ts: delete the lease and its keys
 IsExpired(id, now)  → expires_at <= now   (judged by the leader at read time)
 ```

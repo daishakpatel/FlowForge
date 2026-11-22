@@ -9,7 +9,7 @@ import (
 // Lease timing (ADR-005). The FSM stores only timestamps carried in commands:
 //
 //	LeaseGrant@ts       → expires_at = ts + ttl
-//	KeepAlive@ts        → expires_at = max(expires_at, ts) + ttl   (never moves backwards)
+//	KeepAlive@ts        → expires_at = max(expires_at, ts + ttl)   (from its own ts, 00E §5.2; never backwards)
 //	LeaseExpire(id)@ts  → if expires_at <= ts: delete the lease and its keys (idempotent)
 //	IsExpired(id, now)  → expires_at <= now, judged by the reader (the leader, 04.04)
 
@@ -54,18 +54,21 @@ func (s *state) grant(ts int64, r *pb.LeaseGrantRequest) *pb.CommandResult {
 
 // keepAlive extends a lease that still exists, even one past its expiry that no LeaseExpire has
 // removed yet (task 04.03: only an expired *and* removed lease is rejected). The fencing token
-// must match the grant's.
+// must match the grant's. The new expiry counts from the keep-alive's own timestamp (00E §5.2),
+// so renewals more frequent than the TTL don't push expiry further and further out (fixed in
+// 04.05: extending from max(expires_at, ts) let a dead holder's lease outlive it by a TTL per
+// renewal); it never moves backwards.
 func (s *state) keepAlive(ts int64, r *pb.LeaseKeepAliveRequest) *pb.CommandResult {
 	l := s.leases[r.GetLeaseId()]
 	if l == nil || l.fencing != r.GetFencingToken() {
 		return result(codeNoLease)
 	}
-	exp, ok := expiry(max(l.expiresAt, ts), l.ttlMs)
+	exp, ok := expiry(ts, l.ttlMs)
 	if !ok {
 		return result(codeInvalid)
 	}
-	l.expiresAt = exp
-	return &pb.CommandResult{Code: codeOK, LeaseId: r.GetLeaseId(), TtlMs: l.ttlMs, ExpiresAtMs: exp}
+	l.expiresAt = max(l.expiresAt, exp)
+	return &pb.CommandResult{Code: codeOK, LeaseId: r.GetLeaseId(), TtlMs: l.ttlMs, ExpiresAtMs: l.expiresAt}
 }
 
 func (s *state) revoke(r *pb.LeaseRevokeRequest) *pb.CommandResult {
