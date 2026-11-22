@@ -9,6 +9,10 @@
 //   - CONFLICT (ABORTED): an expected_version did not match; metadata "current_version".
 //     (Task 04.01 calls this VERSION_MISMATCH; 00E §4 names version conflicts CONFLICT.)
 //   - INVALID_ARGUMENT, NOT_FOUND (an unknown or expired lease), as in 00E §4.
+//   - UNAVAILABLE: a timeout or a node going down; the outcome of a write is unknown, so retry
+//     it with the same meta (task 04.04).
+// When the state machine decided the outcome, metadata "result_code" names its ResultCode
+// without the prefix (command.proto), e.g. LEASE_EXPIRED vs LEASE_NOT_FOUND behind NOT_FOUND.
 // Fields are only ever added; removed fields are reserved (00C §9).
 syntax = "proto3";
 
@@ -81,6 +85,9 @@ message GetRequest {
 
 message GetResponse {
   KeyValue kv = 1;
+  uint64 applied_index = 2; // the serving node's applied index when it read (task 04.04)
+  int64 leader_now_ms = 3; // LINEARIZABLE: the leader's clock that judged lease expiry; 0 otherwise
+  bool stale = 4; // SERIALIZABLE: this node's local state, which may lag the leader
 }
 
 message PutRequest {
@@ -107,13 +114,18 @@ message DeleteResponse {
 
 message ListRequest {
   string prefix = 1;
-  uint32 limit = 2; // 0: the server's default
+  uint32 limit = 2; // 0: the server's default (1000)
   Consistency consistency = 3;
+  string start_key = 4; // continue from this key (inclusive): a previous response's next_key
 }
 
 message ListResponse {
   repeated KeyValue kvs = 1;
   bool more = 2; // more keys match than were returned
+  uint64 applied_index = 3; // as GetResponse
+  int64 leader_now_ms = 4; // as GetResponse
+  bool stale = 5; // as GetResponse
+  string next_key = 6; // set when more: pass it as start_key for the next page
 }
 
 message CASRequest {
