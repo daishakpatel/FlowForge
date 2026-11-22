@@ -497,6 +497,25 @@ func TestList_SortedPrefixAndLimit(t *testing.T) {
 	}
 }
 
+// TestListFrom_ContinuesAtStartKey: pages resume at start (inclusive), so next = the first key not
+// returned walks the prefix without gaps or repeats (04.04's List continuation).
+func TestListFrom_ContinuesAtStartKey(t *testing.T) {
+	x := newH(t)
+	for _, k := range []string{"w/c", "a", "w/a", "w/b", "x"} {
+		x.put(k, k)
+	}
+	kvs, more := x.f.ListFrom("w/", "w/b", 1)
+	if len(kvs) != 1 || kvs[0].GetKey() != "w/b" || !more {
+		t.Fatalf("ListFrom(w/b, 1) = %v more=%v", kvs, more)
+	}
+	if kvs, more := x.f.ListFrom("w/", "w/bb", 0); len(kvs) != 1 || kvs[0].GetKey() != "w/c" || more {
+		t.Fatalf("ListFrom(w/bb) = %v more=%v", kvs, more)
+	}
+	if kvs, _ := x.f.ListFrom("w/", "", 0); len(kvs) != 3 {
+		t.Fatalf("ListFrom with no start = %v", kvs)
+	}
+}
+
 // TestLimits_StateBytesKeepSnapshotsWithinLimit: the per-key limits alone allow far more state than
 // a snapshot may hold, so a total-bytes quota refuses writes before the state outgrows a snapshot.
 func TestLimits_StateBytesKeepSnapshotsWithinLimit(t *testing.T) {

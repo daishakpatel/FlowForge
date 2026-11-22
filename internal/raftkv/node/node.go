@@ -64,6 +64,7 @@ type Node struct {
 	recvc   chan *pb.Message
 	reportc chan struct{} // signals pending reports (capacity 1)
 	confc   chan *pb.ConfChange
+	xferc   chan transferReq
 	stopc   chan struct{}
 	donec   chan struct{}
 	started atomic.Bool
@@ -114,6 +115,7 @@ func New(cfg Config, st storage.Storage, app Applier) (*Node, error) {
 		recvc:   make(chan *pb.Message, recvQueue),
 		reportc: make(chan struct{}, 1),
 		confc:   make(chan *pb.ConfChange, 1),
+		xferc:   make(chan transferReq, 1),
 		stopc:   make(chan struct{}),
 		donec:   make(chan struct{}),
 		waiters: map[proposalID]*proposal{},
@@ -332,6 +334,8 @@ func (n *Node) run() {
 			n.readIndex(r)
 		case <-n.reportc:
 			n.flushReports()
+		case x := <-n.xferc:
+			x.done <- n.transfer(x.to)
 		case cc := <-n.confc:
 			if err := n.rn.ProposeConfChange(cc); err != nil {
 				n.cfg.Logger.Warn("raft node: conf change dropped", "err", err)

@@ -144,11 +144,16 @@ func (f *FSM) Get(key string) (*pb.KeyValue, bool) {
 // List returns copies of up to limit keys with prefix, in key order (limit ≤ 0: all), and
 // whether more matched.
 func (f *FSM) List(prefix string, limit int) ([]*pb.KeyValue, bool) {
+	return f.ListFrom(prefix, "", limit)
+}
+
+// ListFrom is List starting at the first key ≥ start: a page boundary for 04.04's next_key.
+func (f *FSM) ListFrom(prefix, start string, limit int) ([]*pb.KeyValue, bool) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	var out []*pb.KeyValue
 	for _, k := range sortedKeys(f.st.keys) {
-		if !strings.HasPrefix(k, prefix) {
+		if k < start || !strings.HasPrefix(k, prefix) {
 			continue
 		}
 		if limit > 0 && len(out) == limit {
