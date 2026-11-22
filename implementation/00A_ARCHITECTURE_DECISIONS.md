@@ -297,3 +297,19 @@ Format: Context → Decision → Alternatives considered → Consequences.
   - **Compatible:** fields and methods are added only; no existing field, signature or behaviour changes.
   - **Unchanged config:** `FF_RAFT_PEERS` keeps its format. Nodes still know each other only by peer address, so `leader_hint` stays a node id. The client maps ids to endpoints with `Cluster.Status`.
   - **Tested by:** `TestTransferLeadership_*`, `TestListFrom_ContinuesAtStartKey`, `TestLoad_RaftServerDefaults` and the `internal/raftkv/server` and `internal/raftkv/client` suites.
+
+### ADR-005 / ADR-003 amendment — 04.05 — 2026-11-22
+- **What:**
+  - **Keep-alive formula (defect fix in 04.03's FSM):** keep-alive now sets `expires_at = max(expires_at, ts + ttl)` instead of `max(expires_at, ts) + ttl`.
+  - **Worker key value:** `/workers/{id}` gains `key_id` and `lease_token` (00E §5.2).
+  - **Activation order:** the scheduler's leader election activates its epoch in Postgres (`EpochFence`) before announcing leadership.
+- **Why:**
+  - **Keep-alive:** 00E §5.2, which outranks the 04.03 task file, says keep-alive "extends from its own `cmd.ts_ms`". The old formula added a whole TTL per renewal whenever renewals came faster than the TTL, as they always do (leader renew 3 s against a 10 s TTL; worker heartbeat 5 s against 15 s). Expiry then ran ahead without bound, so a crashed scheduler or worker would keep its lease for minutes or hours after a long run. 04.05's leader-failover test exposed it.
+  - **`key_id`:** keeps one worker id per API key.
+  - **`lease_token`:** a worker's heartbeats may reach any API instance, which must renew from the key alone.
+- **Impact:**
+  - **Replicated state:** FSM behaviour changes only for keep-alive. Replicas stay deterministic and the snapshot format is unchanged. A cluster running older binaries must be upgraded together, since mixed versions would compute different expiries; nothing is deployed yet.
+  - **Value fields:** the new ones are additive.
+  - **Tests:** the 04.03 lease test's expected expiries changed with the formula, and 04.04's expiry test moved its boundary by 1 ms.
+  - **Tested by:** `TestLeases_*` (fsm), `TestLeases_ExpiryJudgedByLeaderClockAndSwept`, `TestElector_StepsDownBeforeTheServerExpires`, `TestRegistry_*`.
+

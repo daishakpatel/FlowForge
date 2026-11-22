@@ -277,10 +277,10 @@ Every mutating command carries `{client_id, request_id, ts_unix_ms}`; `ts` is st
 |---|---|---|
 | `/cluster/scheduler/leader` | `{"node_id","epoch","since_ms"}` | yes (TTL default 10 s, renew 3 s) |
 | `/counters/scheduler_epoch` | int (via IncrCounter) | no |
-| `/workers/{worker_id}` | `{"capabilities":[],"queues":[],"capacity":n,"version","registered_ms"}` | yes (TTL default 15 s) |
+| `/workers/{worker_id}` | `{"capabilities":[],"queues":[],"capacity":n,"version","registered_ms","key_id","lease_token"}` (`key_id`: the registering API key; `lease_token`: the lease's fencing token, so any API instance can renew; 04.05) | yes (TTL default 15 s) |
 | `/cluster/config` | versioned JSON | no |
 
-Lease semantics: `expires_at_ms = cmd.ts_ms + ttl_ms` stored in FSM; keep-alive extends from its own `cmd.ts_ms`; **the FSM never calls `time.Now()`**. A key bound to an expired lease is *reported* as expired by leader-evaluated reads (`now` = leader wall clock at ReadIndex completion) and physically deleted by a leader-proposed `LeaseExpire(lease_id, ts_ms)` command. Safety never depends on lease timing: all state mutations are fenced in Postgres (§2 `cluster_state.epoch`, `task_attempts.fencing_token`).
+Lease semantics: `expires_at_ms = cmd.ts_ms + ttl_ms` stored in FSM; keep-alive extends from its own `cmd.ts_ms` (`expires_at = max(expires_at, cmd.ts_ms + ttl_ms)`: renewals never accumulate and never move expiry backwards; 04.05); **the FSM never calls `time.Now()`**. A key bound to an expired lease is *reported* as expired by leader-evaluated reads (`now` = leader wall clock at ReadIndex completion) and physically deleted by a leader-proposed `LeaseExpire(lease_id, ts_ms)` command. Safety never depends on lease timing: all state mutations are fenced in Postgres (§2 `cluster_state.epoch`, `task_attempts.fencing_token`).
 
 ### 5.3 Raft defaults
 Election tick 10 × 100 ms = 1 s heartbeat tick 1 (100 ms); `PreVote` and `CheckQuorum` enabled; snapshot every 10 000 applied entries (`FF_RAFT_SNAPSHOT_ENTRIES`); trailing entries kept 1 000; max inflight msgs 256; max size per msg 1 MiB; static peers via config.
