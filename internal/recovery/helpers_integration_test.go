@@ -20,6 +20,7 @@ import (
 	"github.com/daishakpatel/flowforge/internal/persistence"
 	"github.com/daishakpatel/flowforge/internal/persistence/pg"
 	"github.com/daishakpatel/flowforge/internal/scheduler"
+	"github.com/daishakpatel/flowforge/internal/testutil/epochguard"
 	"github.com/daishakpatel/flowforge/internal/worker/runtime"
 	"github.com/daishakpatel/flowforge/internal/workerapi"
 	"github.com/daishakpatel/flowforge/internal/workerapi/workerapitest"
@@ -43,6 +44,7 @@ type env struct {
 	decide   *scheduler.DecisionLoop
 	timeouts *scheduler.TimeoutLoop
 	recov    *Loop
+	guard    *epochguard.Guard   // the loops' TxManager: every loop transaction asserts the epoch first (04.07)
 	runs     *service.RunService // run control (03.05)
 	seq      atomic.Int64
 }
@@ -61,6 +63,8 @@ func newEnv(t *testing.T) *env {
 		DB: srv.Pool, Tx: srv.TM, DefRepo: srv.Defs, RunRepo: srv.Runs, Reruns: srv.Runs, TaskRepo: srv.Tasks, AttemptRepo: srv.Attempts,
 		RunControl: pg.RunControlRepo{}, Notify: pg.SchedulerRepo{}, Clock: fc, CancelGrace: cancelGrace,
 	}}
+	e.guard = epochguard.New(srv.TM)
+	t.Cleanup(func() { e.guard.Check(t) })
 	e.syncClock(t)
 	e.build()
 	return e
@@ -71,16 +75,16 @@ func (e *env) build() {
 	s := e.srv
 	ender := workerapi.AttemptEnder{Attempts: s.Attempts, Tasks: s.Tasks, Outcomes: s.Service.Outcomes}
 	e.decide = &scheduler.DecisionLoop{
-		DB: s.Pool, Tx: s.TM, Cluster: pg.ClusterRepo{}, Sched: pg.SchedulerRepo{}, Notify: pg.SchedulerRepo{},
+		DB: s.Pool, Tx: e.guard, Cluster: pg.ClusterRepo{}, Sched: pg.SchedulerRepo{}, Notify: pg.SchedulerRepo{},
 		Runs: s.Runs, Tasks: s.Tasks, Defs: s.Defs, Inputs: scheduler.TemplateResolver{}, Eval: expr.Evaluator{}, Clock: e.clock, Tick: time.Second,
 	}
 	e.timeouts = &scheduler.TimeoutLoop{
-		DB: s.Pool, Tx: s.TM, Cluster: pg.ClusterRepo{}, Recovery: pg.RecoveryRepo{}, Ender: ender,
+		DB: s.Pool, Tx: e.guard, Cluster: pg.ClusterRepo{}, Recovery: pg.RecoveryRepo{}, Ender: ender,
 		Notify: pg.SchedulerRepo{}, Clock: e.clock, Tick: time.Second,
 		Runs: s.Runs, Sched: pg.SchedulerRepo{}, RunControl: pg.RunControlRepo{},
 	}
 	e.recov = &Loop{
-		DB: s.Pool, Tx: s.TM, Cluster: pg.ClusterRepo{}, Recovery: pg.RecoveryRepo{},
+		DB: s.Pool, Tx: e.guard, Cluster: pg.ClusterRepo{}, Recovery: pg.RecoveryRepo{},
 		Leases: &workerapi.PGLeaseProvider{DB: s.Pool, Workers: pg.WorkerRepo{}, Clock: e.clock, TTL: leaseTTL},
 		Ender:  ender, Notify: pg.SchedulerRepo{}, Events: s.Recorder, Clock: e.clock, Tick: recoveryTick,
 		LeaseTTL: leaseTTL, Heartbeat: heartbeat,

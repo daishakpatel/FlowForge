@@ -20,7 +20,7 @@ import (
 var binDir string
 
 // binaries are built from cmd/<name>.
-var binaries = []string{"flowforge-api", "flowforge-scheduler", "flowforge-worker", "flowforgectl"}
+var binaries = []string{"flowforge-api", "flowforge-scheduler", "flowforge-worker", "flowforgectl", "flowforge-raft"}
 
 func TestMain(m *testing.M) {
 	code, err := buildAndRun(m)

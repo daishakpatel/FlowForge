@@ -12,13 +12,24 @@ import (
 	"github.com/daishakpatel/flowforge/internal/config"
 )
 
+// PoolOption adjusts a pool's configuration before NewPool connects.
+type PoolOption func(*pgxpool.Config)
+
+// SessionParam sets a Postgres run-time parameter on every session of the pool (task 04.07).
+func SessionParam(name, value string) PoolOption {
+	return func(c *pgxpool.Config) { c.ConnConfig.RuntimeParams[name] = value }
+}
+
 // NewPool connects a pgx pool to dsn (config FF_PG_DSN) and pings it, so a bad DSN or an
 // unreachable database fails at startup. The caller closes the pool. pgx redacts the password
-// in parse errors.
-func NewPool(ctx context.Context, dsn config.Secret) (*pgxpool.Pool, error) {
+// in parse errors. opts adjust the configuration first (SessionParam).
+func NewPool(ctx context.Context, dsn config.Secret, opts ...PoolOption) (*pgxpool.Pool, error) {
 	cfg, err := pgxpool.ParseConfig(dsn.Reveal())
 	if err != nil {
 		return nil, fmt.Errorf("parse postgres dsn: %w", err)
+	}
+	for _, o := range opts {
+		o(cfg)
 	}
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {

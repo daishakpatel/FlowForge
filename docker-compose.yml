@@ -1,13 +1,14 @@
 # Local development stack (task 01.02). Credentials are dev-only constants (00C §10.4).
 # Profiles: core = postgres; streaming = timescaledb (Kafka joins in 05.01); ai = postgres for aiops;
-# raft, ui and obs are reserved for later tasks; full = everything. Map: docs/development.md.
+# raft = the 3-node Raft KV (04.06), plus with core the Raft-coordinated control plane (04.07);
+# ui and obs are reserved for later tasks; full = everything. Map: docs/development.md.
 # Image tags are pinned; keep them in step with internal/testutil and docs/decisions/versions.md.
 name: flowforge
 
 services:
   postgres:
     image: pgvector/pgvector:0.8.7-pg16
-    profiles: [core, ai, full]
+    profiles: [core, ai, raft, full] # raft: the control plane on Raft needs it (04.07)
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -94,9 +95,119 @@ services:
     volumes:
       - raft3data:/data
 
+  # Control plane on Raft, the failover demo (task 04.07): migrate once, then the API, three
+  # schedulers that elect one leader through raft-1..3 (FF_COORDINATION=raft), and two workers.
+  # Run with both profiles: docker compose --profile core --profile raft up -d --build
+  # (make failover-up). The admin key is a dev-only default; the workers' key is created at
+  # startup by worker-bootstrap. A scheduler deposed mid-decision exits on STALE_EPOCH and is
+  # restarted as a candidate. Map: docs/architecture/leadership-and-fencing.md.
+  flowforge-migrate:
+    build: {context: ., dockerfile: deploy/docker/Dockerfile.service, args: {SERVICE: flowforge-migrate}}
+    image: flowforge-migrate:dev
+    profiles: [raft, full]
+    command: ["up"]
+    environment:
+      FF_PG_DSN: postgres://flowforge:flowforge@postgres:5432/flowforge?sslmode=disable
+      FF_LOG_FORMAT: text
+    depends_on:
+      postgres: {condition: service_healthy}
+    restart: "no"
+
+  flowforge-api:
+    build: {context: ., dockerfile: deploy/docker/Dockerfile.service, args: {SERVICE: flowforge-api}}
+    image: flowforge-api:dev
+    profiles: [raft, full]
+    environment: &control-plane
+      FF_ENV: dev
+      FF_LOG_FORMAT: text
+      FF_PG_DSN: postgres://flowforge:flowforge@postgres:5432/flowforge?sslmode=disable
+      FF_COORDINATION: raft
+      FF_RAFT_ENDPOINTS: raft-1:7000,raft-2:7000,raft-3:7000
+      # A takeover takes about TTL + renew; 6s/2s keeps it under the 10 s target (defaults 10s/3s).
+      FF_LEADER_TTL: 6s
+      FF_LEADER_RENEW: 2s
+      FF_ADMIN_BOOTSTRAP_KEY: ${FF_ADMIN_BOOTSTRAP_KEY:-ff_devcompose27_ZGV2LW9ubHktY29tcG9zZS1hZG1pbi1rZXktMDQuMDc} # dev-only
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on: &control-plane-deps
+      flowforge-migrate: {condition: service_completed_successfully}
+      raft-1: {condition: service_healthy}
+      raft-2: {condition: service_healthy}
+      raft-3: {condition: service_healthy}
+    restart: unless-stopped
+
+  scheduler-1: &scheduler
+    build: {context: ., dockerfile: deploy/docker/Dockerfile.service, args: {SERVICE: flowforge-scheduler}}
+    image: flowforge-scheduler:dev
+    profiles: [raft, full]
+    environment:
+      <<: *control-plane
+      FF_SCHED_NODE_ID: scheduler-1
+    depends_on: *control-plane-deps
+    restart: unless-stopped
+
+  scheduler-2:
+    <<: *scheduler
+    environment:
+      <<: *control-plane
+      FF_SCHED_NODE_ID: scheduler-2
+
+  scheduler-3:
+    <<: *scheduler
+    environment:
+      <<: *control-plane
+      FF_SCHED_NODE_ID: scheduler-3
+
+  # Creates a worker-role API key through the API and leaves it in a config file the workers read
+  # (FF_CONFIG_FILE). Dev only: each start creates a new key.
+  worker-bootstrap:
+    image: curlimages/curl:8.11.1
+    profiles: [raft, full]
+    user: "0"
+    environment:
+      FF_ADMIN_BOOTSTRAP_KEY: ${FF_ADMIN_BOOTSTRAP_KEY:-ff_devcompose27_ZGV2LW9ubHktY29tcG9zZS1hZG1pbi1rZXktMDQuMDc} # dev-only
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until body=$$(curl -fsS -X POST -H "Authorization: Bearer $$FF_ADMIN_BOOTSTRAP_KEY" -H 'Content-Type: application/json' \
+            -d '{"name":"compose-workers","role":"worker"}' http://flowforge-api:8080/api/v1/api-keys); do sleep 1; done
+        echo "$$body" | sed -n 's/.*"key":"\([^"]*\)".*/FF_WORKER_TOKEN: \1/p' > /bootstrap/worker.yaml
+        chmod 644 /bootstrap/worker.yaml
+        test -s /bootstrap/worker.yaml
+    volumes:
+      - workerbootstrap:/bootstrap
+    depends_on:
+      flowforge-api: {condition: service_started}
+    restart: "no"
+
+  worker-1: &worker
+    build: {context: ., dockerfile: deploy/docker/Dockerfile.service, args: {SERVICE: flowforge-worker}}
+    image: flowforge-worker:dev
+    profiles: [raft, full]
+    environment: &worker-env
+      FF_ENV: dev
+      FF_LOG_FORMAT: text
+      FF_CONFIG_FILE: /bootstrap/worker.yaml
+      FF_WORKER_ID: worker-1
+      FF_WORKER_QUEUES: default
+      FF_WORKER_CAPACITY: "4"
+      FF_API_GRPC_TARGET: flowforge-api:9090
+    volumes:
+      - workerbootstrap:/bootstrap:ro
+    depends_on:
+      worker-bootstrap: {condition: service_completed_successfully}
+    restart: unless-stopped
+
+  worker-2:
+    <<: *worker
+    environment:
+      <<: *worker-env
+      FF_WORKER_ID: worker-2
+
 volumes:
   pgdata:
   mddata:
   raft1data:
   raft2data:
   raft3data:
+  workerbootstrap:

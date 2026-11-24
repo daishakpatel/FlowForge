@@ -19,6 +19,7 @@ import (
 	"github.com/daishakpatel/flowforge/internal/persistence/pg"
 	"github.com/daishakpatel/flowforge/internal/scheduler"
 	"github.com/daishakpatel/flowforge/internal/testutil"
+	"github.com/daishakpatel/flowforge/internal/testutil/epochguard"
 	"github.com/daishakpatel/flowforge/internal/workerapi"
 	"github.com/daishakpatel/flowforge/internal/workerapi/workerapitest"
 	"github.com/daishakpatel/flowforge/internal/workflow/expr"
@@ -260,7 +261,8 @@ func TestLoops_SurviveDatabaseOutage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tm := pg.NewTxManager(pool, clock.Real{}, nil)
+	tm := epochguard.New(pg.NewTxManager(pool, clock.Real{}, nil))
+	t.Cleanup(func() { tm.Check(t) })
 	ender := workerapi.AttemptEnder{Attempts: srv.Attempts, Tasks: srv.Tasks, Outcomes: srv.Service.Outcomes}
 	runner := scheduler.NewRunner(scheduler.AlwaysLeader{})
 	runner.RegisterLoop(&scheduler.DecisionLoop{
