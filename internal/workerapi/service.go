@@ -6,13 +6,16 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/daishakpatel/flowforge/internal/api/auth"
 	"github.com/daishakpatel/flowforge/internal/apperrors"
 	"github.com/daishakpatel/flowforge/internal/clock"
+	"github.com/daishakpatel/flowforge/internal/events"
 	workerv1 "github.com/daishakpatel/flowforge/internal/gen/proto/worker/v1"
 	"github.com/daishakpatel/flowforge/internal/persistence"
+	"github.com/daishakpatel/flowforge/internal/workflow/statemachine"
 )
 
 // Registration limits.
@@ -49,6 +52,8 @@ type Service struct {
 	// StaleRejections counts reports refused for a stale fencing token
 	// (flowforge_stale_attempt_rejections_total).
 	StaleRejections prometheus.Counter
+	// Events records worker.registered on every successful Register (task 04.07). Nil: no event.
+	Events *events.Recorder
 }
 
 var _ workerv1.WorkerServiceServer = (*Service)(nil)
@@ -64,6 +69,15 @@ func (s *Service) Register(ctx context.Context, req *workerv1.RegisterRequest) (
 	})
 	if err != nil {
 		return nil, err
+	}
+	if s.Events != nil {
+		// After the lease, in its own transaction: a failure here makes the worker retry
+		// Register, which is idempotent.
+		if err := s.Tx.WithTx(ctx, pgx.TxOptions{}, func(tx pgx.Tx) error {
+			return s.Events.Record(ctx, tx, events.NewWorkerEvent(statemachine.EventWorkerRegistered, events.WorkerPayload{WorkerID: req.GetWorkerId()}))
+		}); err != nil {
+			return nil, fmt.Errorf("record worker.registered: %w", err)
+		}
 	}
 	return &workerv1.RegisterResponse{LeaseTtlMs: s.LeaseTTL.Milliseconds(), HeartbeatIntervalMs: s.HeartbeatInterval.Milliseconds()}, nil
 }

@@ -646,3 +646,20 @@ func TestCompleteTask_WakesScheduler(t *testing.T) {
 		t.Fatalf("no %s notification after CompleteTask: %v", persistence.SchedulerWakeChannel, err)
 	}
 }
+
+// TestRegister_RecordsWorkerRegistered: a registration records worker.registered (task 04.07), an
+// outbox-only cluster event keyed by the worker id; re-registering records it again.
+func TestRegister_RecordsWorkerRegistered(t *testing.T) {
+	rec := events.NewRecorder(clock.Real{}, ids.NewGenerator(clock.Real{}, crand.Reader), "flowforge-api")
+	e := newEnv(t, func(s *Service) { s.Events = rec })
+	e.register(t, "w-events", []string{"t"}, []string{"default"}, 1)
+	e.register(t, "w-events", []string{"t"}, []string{"default"}, 1)
+	var n int
+	if err := e.pool.QueryRow(t.Context(), `SELECT count(*) FROM outbox WHERE envelope->>'event_type' = 'worker.registered'
+		AND envelope->>'aggregate_id' = 'w-events' AND envelope->'payload'->>'worker_id' = 'w-events'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("worker.registered events = %d, want 2", n)
+	}
+}

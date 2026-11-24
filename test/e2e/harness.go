@@ -34,6 +34,11 @@ const (
 	heartbeat = time.Second
 	schedTick = "100ms"
 	readyWait = time.Minute
+	// In raft mode (task 04.07) the scheduler leader lease is 6 s, renewed every 2 s: shorter than
+	// the 10 s default, so a takeover (about TTL + renew) fits the 10 s target, and long enough
+	// to be realistic. The worker lease (leaseTTL) is the 3 s minimum raft mode allows.
+	leaderTTL   = 6 * time.Second
+	leaderRenew = 2 * time.Second
 )
 
 // Harness is one FlowForge deployment for one test: its own Postgres container, and the
@@ -50,6 +55,12 @@ type Harness struct {
 	apiGRPC   string
 	logDir    string
 	http      *http.Client
+
+	// coordination is FF_COORDINATION for the API and schedulers: local, or raft with the
+	// 3-node cluster Raft (task 04.07).
+	coordination  string
+	raftEndpoints string
+	Raft          []*Proc
 
 	mu    sync.Mutex
 	procs []*Proc
@@ -68,9 +79,25 @@ type Proc struct {
 	done chan struct{} // closed when the current incarnation exits
 }
 
-// New starts Postgres, migrates it and returns a harness with no processes yet.
+// New starts Postgres, migrates it and returns a harness with no processes yet. The coordination
+// mode comes from FF_E2E_COORDINATION (local, the default, or raft: then a 3-node Raft cluster
+// starts too), so the whole suite runs in either mode (make test-e2e, make test-e2e-raft).
 func New(t *testing.T) *Harness {
 	t.Helper()
+	return newHarness(t, os.Getenv("FF_E2E_COORDINATION"))
+}
+
+// NewRaft is New in raft mode, for the tests that need Raft whatever the suite's mode.
+func NewRaft(t *testing.T) *Harness {
+	t.Helper()
+	return newHarness(t, "raft")
+}
+
+func newHarness(t *testing.T, mode string) *Harness {
+	t.Helper()
+	if mode == "" {
+		mode = "local"
+	}
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
 	defer cancel()
 	c, err := postgres.Run(ctx, testutil.PGImage, postgres.WithUsername("flowforge"),
@@ -96,9 +123,54 @@ func New(t *testing.T) *Harness {
 		t.Fatal(err)
 	}
 	h := &Harness{t: t, pg: c, DSN: dsn, DB: pool, AdminKey: key.Token, logDir: logDir(t),
-		http: &http.Client{Timeout: 30 * time.Second}}
+		http: &http.Client{Timeout: 30 * time.Second}, coordination: mode}
 	t.Cleanup(h.stopAll)
+	if mode == "raft" {
+		h.StartRaft()
+	}
 	return h
+}
+
+// StartRaft starts a 3-node flowforge-raft cluster with static peers, each with its own data
+// directory (kept across Restart), and waits until every node knows a leader. All three start
+// before any is waited on: a node is ready only once a quorum elected a leader.
+func (h *Harness) StartRaft() {
+	h.t.Helper()
+	type addrs struct{ client, peer, http string }
+	nodes := make([]addrs, 3)
+	var peers, endpoints []string
+	for i := range nodes {
+		nodes[i] = addrs{freeAddr(h.t), freeAddr(h.t), freeAddr(h.t)}
+		peers = append(peers, fmt.Sprintf("%d=%s", i+1, nodes[i].peer))
+		endpoints = append(endpoints, nodes[i].client)
+	}
+	h.raftEndpoints = strings.Join(endpoints, ",")
+	var dones []chan struct{}
+	for i, n := range nodes {
+		name := fmt.Sprintf("raft-%d", i+1)
+		p := &Proc{Name: name, bin: "flowforge-raft", httpAddr: n.http, logPath: filepath.Join(h.logDir, name+".log"),
+			env: common(map[string]string{
+				"FF_RAFT_NODE_ID": fmt.Sprint(i + 1), "FF_RAFT_PEERS": strings.Join(peers, ","), "FF_RAFT_DATA_DIR": h.t.TempDir(),
+				"FF_RAFT_CLIENT_ADDR": n.client, "FF_RAFT_PEER_ADDR": n.peer, "FF_RAFT_HTTP_ADDR": n.http,
+			})}
+		h.mu.Lock()
+		h.procs = append(h.procs, p)
+		h.mu.Unlock()
+		h.Raft = append(h.Raft, p)
+		dones = append(dones, h.spawn(p))
+	}
+	for i, p := range h.Raft {
+		h.waitReady(p, dones[i])
+	}
+}
+
+// coordinationEnv is what the API and schedulers need for the harness's coordination mode.
+func (h *Harness) coordinationEnv() map[string]string {
+	if h.coordination != "raft" {
+		return nil
+	}
+	return map[string]string{"FF_COORDINATION": "raft", "FF_RAFT_ENDPOINTS": h.raftEndpoints,
+		"FF_LEADER_TTL": leaderTTL.String(), "FF_LEADER_RENEW": leaderRenew.String()}
 }
 
 // logDir is FF_E2E_LOG_DIR/<test> when set (kept after the run, e.g. as a CI artifact), else a
@@ -143,10 +215,10 @@ func (h *Harness) StartAPI() *Proc {
 	h.t.Helper()
 	httpAddr, grpcAddr := freeAddr(h.t), freeAddr(h.t)
 	h.APIURL, h.apiGRPC = "http://"+httpAddr, grpcAddr
-	p := h.start("api", "flowforge-api", httpAddr, map[string]string{
+	p := h.start("api", "flowforge-api", httpAddr, merge(map[string]string{
 		"FF_PG_DSN": h.DSN, "FF_API_HTTP_ADDR": httpAddr, "FF_API_GRPC_ADDR": grpcAddr,
 		"FF_ADMIN_BOOTSTRAP_KEY": h.AdminKey, "FF_CANCEL_GRACE": "2s", "FF_API_RATE_LIMIT_RPS": "100000",
-	})
+	}, h.coordinationEnv()))
 	if h.workerKey == "" {
 		var k struct {
 			Key string `json:"key"`
@@ -157,13 +229,39 @@ func (h *Harness) StartAPI() *Proc {
 	return p
 }
 
-// StartScheduler starts flowforge-scheduler (single-scheduler mode: start at most one).
+// StartScheduler starts flowforge-scheduler named "scheduler". In local mode start at most one;
+// in raft mode it is one leader candidate (see StartSchedulers).
 func (h *Harness) StartScheduler() *Proc {
 	h.t.Helper()
+	return h.startScheduler("scheduler")
+}
+
+// StartSchedulers starts n leader candidates scheduler-1..n (raft mode, task 04.07); the
+// process name is also its FF_SCHED_NODE_ID, the leader key's node_id.
+func (h *Harness) StartSchedulers(n int) []*Proc {
+	h.t.Helper()
+	var out []*Proc
+	for i := 1; i <= n; i++ {
+		out = append(out, h.startScheduler(fmt.Sprintf("scheduler-%d", i)))
+	}
+	return out
+}
+
+func (h *Harness) startScheduler(name string) *Proc {
+	h.t.Helper()
 	addr := freeAddr(h.t)
-	return h.start("scheduler", "flowforge-scheduler", addr, map[string]string{
+	return h.start(name, "flowforge-scheduler", addr, merge(map[string]string{
 		"FF_PG_DSN": h.DSN, "FF_SCHED_HTTP_ADDR": addr, "FF_SCHED_TICK": schedTick, "FF_EVENT_PUBLISHER": "log",
-	})
+		"FF_SCHED_NODE_ID": name,
+	}, h.coordinationEnv()))
+}
+
+// merge returns a with b's entries added.
+func merge(a, b map[string]string) map[string]string {
+	for k, v := range b {
+		a[k] = v
+	}
+	return a
 }
 
 // StartWorker starts flowforge-worker id with capacity slots on queues (default: "default").
@@ -204,6 +302,12 @@ func (h *Harness) start(name, bin, httpAddr string, env map[string]string) *Proc
 // launch starts p's next incarnation and waits for its /readyz.
 func (h *Harness) launch(p *Proc) {
 	h.t.Helper()
+	h.waitReady(p, h.spawn(p))
+}
+
+// spawn starts p's next incarnation and returns the channel closed when it exits.
+func (h *Harness) spawn(p *Proc) chan struct{} {
+	h.t.Helper()
 	f, err := os.OpenFile(p.logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		h.t.Fatal(err)
@@ -225,7 +329,7 @@ func (h *Harness) launch(p *Proc) {
 	p.mu.Lock()
 	p.cmd, p.done = cmd, done
 	p.mu.Unlock()
-	h.waitReady(p, done)
+	return done
 }
 
 func (h *Harness) waitReady(p *Proc, done chan struct{}) {
