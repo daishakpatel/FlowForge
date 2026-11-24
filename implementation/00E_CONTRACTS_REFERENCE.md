@@ -299,6 +299,7 @@ Election tick 10 × 100 ms = 1 s heartbeat tick 1 (100 ms); `PreVote` and `Check
 | `FF_API_RATE_LIMIT_RPS` | `50` (per API key; burst 2×; `worker` and `ai-readonly` keys 4×) | api |
 | `FF_SSE_MAX_CONNECTIONS` | `200` (open `GET /api/v1/events/stream` streams; 503 beyond; 03.07) | api |
 | `FF_RAFT_ENDPOINTS` | `raft-1:7000,raft-2:7000,raft-3:7000` | api, scheduler |
+| `FF_COORDINATION` | `local` (`local`: single scheduler, always leader, worker leases in Postgres; `raft`: Raft leader election + worker leases, needs `FF_WORKER_LEASE_TTL` ≥ 3 s; 04.07) | api, scheduler |
 | `FF_RAFT_NODE_ID`, `FF_RAFT_PEERS`, `FF_RAFT_DATA_DIR`, `FF_RAFT_CLIENT_ADDR`, `FF_RAFT_PEER_ADDR` | — | raft |
 | `FF_RAFT_PROPOSAL_TIMEOUT` | `3s` (a write's wait for apply, within the client deadline; 04.04) | raft |
 | `FF_RAFT_HTTP_ADDR` | `:8083` (`/metrics`, `/healthz`, `/readyz`; 04.04) | raft |
@@ -311,6 +312,7 @@ Election tick 10 × 100 ms = 1 s heartbeat tick 1 (100 ms); `PreVote` and `Check
 | `FF_CRON_MISSED_GRACE` | `60s` (a cron fire later than this follows the trigger's `missed_policy`; 03.08) | scheduler |
 | `FF_RETENTION_OUTBOX` / `FF_RETENTION_EVENTS` / `FF_RETENTION_TASK_LOGS` / `FF_RETENTION_IDEMPOTENCY` | `72h` / `720h` / `336h` / `24h` (published outbox rows, workflow events, task logs; Idempotency-Key lifetime; 03.07) | scheduler |
 | `FF_LEADER_TTL` / `FF_LEADER_RENEW` | `10s` / `3s` | scheduler |
+| `FF_SCHED_NODE_ID` | unset = the hostname (leader candidate name, raft mode; 04.07) | scheduler |
 | `FF_WORKER_LEASE_TTL` / `FF_WORKER_HEARTBEAT` | `15s` / `5s` | api, worker, scheduler (recovery, 03.04) |
 | `FF_WORKER_ID`, `FF_WORKER_QUEUES`, `FF_WORKER_CAPACITY`, `FF_API_GRPC_TARGET`, `FF_WORKER_TOKEN` | — | worker |
 | `FF_WORKER_HTTP_ADDR` | `:8082` (`/metrics`, `/healthz`, `/readyz`) | worker |
@@ -388,6 +390,8 @@ Auth: `authorization: Bearer <worker token>` metadata (role `worker`). Stale tok
 | GET | `/api/v1/events/stream` (SSE) | viewer |
 | GET | `/healthz` `/readyz` `/metrics` `/openapi.json` | none (metrics: network-restricted) |
 | GET | `/internal/v1/runs/{id}` `/runs/{id}/tasks` `/tasks/{id}/attempts` `/attempts/{id}/logs` `/workers/{id}` `/cluster/status` `/runs?since=&until=&status=&workflow=` | ai-readonly |
+
+`GET /api/v1/cluster/status` (04.07) → `{coordination: local|raft, scheduler: {leader_id, epoch, since, fenced_epoch}, raft: null | {available, leader_id, term, commit_index, nodes: [{id, addr, reachable, match_index, lag}]}, workers: {alive}, fetched_at}`; a part whose source is down is `null` (`raft.available` false), never an error. The `/internal/v1/cluster/status` alias is mounted by 06.02.
 
 Pagination: `?limit=50&cursor=<opaque>` → `{items:[…], next_cursor}`.
 

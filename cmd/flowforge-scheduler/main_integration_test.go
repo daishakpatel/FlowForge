@@ -187,3 +187,26 @@ func get(t *testing.T, url string) (int, string) {
 	}
 	return resp.StatusCode, string(body)
 }
+
+// TestRun_LocalModeRefusesARaftFencedDatabase: after raft mode raised the fence, local mode's
+// epoch 0 could never commit (every loop would fail STALE_EPOCH and the process crash-loop), so
+// it refuses to start and says how to switch back (code review, 04.07).
+func TestRun_LocalModeRefusesARaftFencedDatabase(t *testing.T) {
+	db := testutil.NewFlowforgeDB(t)
+	pool, err := pg.NewPool(t.Context(), config.Secret(db.DSN))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if _, err := pool.Exec(t.Context(), `UPDATE cluster_state SET epoch = 4, leader_id = 'scheduler-2'`); err != nil {
+		t.Fatal(err)
+	}
+	err = run(t.Context(), envOpts(map[string]string{"FF_PG_DSN": db.DSN}), io.Discard,
+		func(context.Context, string, string) (net.Listener, error) {
+			t.Error("listened in local mode on a raft-fenced database")
+			return nil, nil
+		})
+	if err == nil || !strings.Contains(err.Error(), "FF_COORDINATION=raft") || !strings.Contains(err.Error(), "epoch 4") {
+		t.Fatalf("run = %v, want a refusal naming the stored epoch and FF_COORDINATION=raft", err)
+	}
+}

@@ -43,7 +43,7 @@ A key that no FlowForge service reads, such as a typo like `FF_PG_DNS`, is rejec
 | `oneof` | One of the listed values |
 | `queue_limits` | Each item is `queue=n` with a non-empty queue and an integer n > 0 |
 
-Cross-field rules: `FF_LEADER_RENEW` must be less than half of `FF_LEADER_TTL`, and `FF_WORKER_HEARTBEAT` less than half of `FF_WORKER_LEASE_TTL`, so a lease survives one missed renewal. Durations use Go syntax (`500ms`, `10s`, `1m30s`).
+Cross-field rules: `FF_LEADER_RENEW` must be less than half of `FF_LEADER_TTL`, and `FF_WORKER_HEARTBEAT` less than half of `FF_WORKER_LEASE_TTL`, so a lease survives one missed renewal. With `FF_COORDINATION=raft`, `FF_WORKER_LEASE_TTL` must be at least `3s`, three times the Raft election timeout, so a Raft leader change never expires the leases of workers that keep heartbeating. Durations use Go syntax (`500ms`, `10s`, `1m30s`).
 
 ## Variables
 
@@ -66,6 +66,7 @@ Defaults are dev-only. "—" means there is no default.
 | `FF_API_RATE_LIMIT_RPS` | `50` | positive; per API key, burst 2×, service roles 4× | `API` |
 | `FF_SSE_MAX_CONNECTIONS` | `200` | positive; open event streams beyond this get 503 ([events](architecture/events.md)) | `API` |
 | `FF_RAFT_ENDPOINTS` | `raft-1:7000,raft-2:7000,raft-3:7000` | addr (each) | `API`, `Scheduler` |
+| `FF_COORDINATION` | `local` | one of `local`, `raft` (leader election and worker leases; 04.07) | `API`, `Scheduler` |
 | `FF_SCHED_HTTP_ADDR` | `:8081` | addr; serves `/metrics`, `/healthz`, `/readyz` | `Scheduler` |
 | `FF_SCHED_TICK` | `500ms` | positive | `Scheduler` |
 | `FF_QUEUE_LIMITS` | — (unlimited) | queue_limits: `queue=n` items, n > 0; caps QUEUED+RUNNING tasks per queue across runs | `Scheduler` |
@@ -76,6 +77,7 @@ Defaults are dev-only. "—" means there is no default.
 | `FF_RETENTION_IDEMPOTENCY` | `24h` | positive; a run's `Idempotency-Key` is cleared after this | `Scheduler` |
 | `FF_CRON_MISSED_GRACE` | `60s` | positive; how late a cron fire may still start its run; later fires follow the trigger's `missed_policy` ([cron](architecture/cron.md)) | `Scheduler` |
 | `FF_LEADER_TTL` | `10s` | positive | `Scheduler` |
+| `FF_SCHED_NODE_ID` | unset (the hostname) | this scheduler's name among leader candidates (raft mode; 04.07) | `Scheduler` |
 | `FF_LEADER_RENEW` | `3s` | positive, < TTL/2 | `Scheduler` |
 | `FF_KAFKA_BROKERS` | `localhost:9092` | addr (each) | `Scheduler` (outbox relay), `Worker`, `Processor` |
 | `FF_WORKER_LEASE_TTL` | `15s` | positive | `API`, `Worker`, `Scheduler` (recovery) |

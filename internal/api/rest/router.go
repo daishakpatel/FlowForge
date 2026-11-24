@@ -52,6 +52,9 @@ type Deps struct {
 
 	// Task 03.08: cron triggers.
 	Triggers *service.TriggerService
+
+	// Task 04.07: GET /api/v1/cluster/status.
+	Cluster ClusterInfo
 }
 
 type handlers struct {
@@ -67,6 +70,7 @@ type handlers struct {
 	leaseTTL  time.Duration
 	events    *sse.Handler
 	triggers  *service.TriggerService
+	cluster   ClusterInfo
 }
 
 // NewRouter builds the API router. Every request passes RequestID → Recover → Logging →
@@ -84,7 +88,7 @@ func NewRouter(d Deps) (chi.Router, error) {
 		return nil, err
 	}
 	h := &handlers{workflows: d.Workflows, runs: d.Runs, db: d.DB, tx: d.Tx, keys: d.APIKeys, auth: d.Auth, clock: d.Clock,
-		workers: d.Workers, logs: d.Logs, leaseTTL: d.WorkerLeaseTTL, events: d.Events, triggers: d.Triggers}
+		workers: d.Workers, logs: d.Logs, leaseTTL: d.WorkerLeaseTTL, events: d.Events, triggers: d.Triggers, cluster: d.Cluster}
 	acl := routeACL()
 	lim := newLimiter(d.Clock, d.RateLimitRPS, 2*d.RateLimitRPS)
 
@@ -126,6 +130,7 @@ func NewRouter(d Deps) (chi.Router, error) {
 			r.Get("/api-keys", h.listAPIKeys)
 			r.Delete("/api-keys/{key_id}", h.revokeAPIKey)
 			r.Get("/workers", h.listWorkers)
+			r.Get("/cluster/status", h.clusterStatus)
 			r.Get("/attempts/{attempt_id}/logs", h.listAttemptLogs)
 			r.Get("/events/stream", h.streamEvents)
 			r.Post("/triggers", h.createTrigger)

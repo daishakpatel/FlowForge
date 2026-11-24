@@ -20,6 +20,7 @@ import (
 	"github.com/daishakpatel/flowforge/internal/persistence/pg"
 	"github.com/daishakpatel/flowforge/internal/scheduler"
 	"github.com/daishakpatel/flowforge/internal/testutil"
+	"github.com/daishakpatel/flowforge/internal/testutil/epochguard"
 )
 
 // env is a migrated database with one workflow "wf", the trigger service and a fake clock at
@@ -29,6 +30,7 @@ type env struct {
 	clock    *clock.Fake
 	triggers *service.TriggerService
 	tm       *pg.TxManager
+	guard    *epochguard.Guard // the loops' TxManager (04.07)
 	gen      ids.Generator
 }
 
@@ -47,10 +49,11 @@ func newEnv(t *testing.T) *env {
 	tm := pg.NewTxManager(pool, clock.Real{}, nil)
 	defs, runs := pg.NewDefinitionRepo(gen), pg.NewRunRepo(gen, rec)
 	fc := clock.NewFake(t0)
-	e := &env{pool: pool, clock: fc, tm: tm, gen: gen, triggers: &service.TriggerService{
+	e := &env{pool: pool, clock: fc, tm: tm, guard: epochguard.New(tm), gen: gen, triggers: &service.TriggerService{
 		DB: pool, Triggers: pg.NewTriggerRepo(gen), DefRepo: defs, RunRepo: runs, Clock: fc,
 		Runs: &service.RunService{DB: pool, Tx: tm, DefRepo: defs, RunRepo: runs},
 	}}
+	t.Cleanup(func() { e.guard.Check(t) })
 	if _, err := defs.Create(t.Context(), pool, persistence.NewDefinition{
 		Name: "wf", Version: 1, Definition: []byte(`{"name":"wf","version":1,"tasks":[{"id":"a","type":"t"}]}`), CreatedBy: "t",
 	}); err != nil {
@@ -60,7 +63,7 @@ func newEnv(t *testing.T) *env {
 }
 
 func (e *env) loop() *cron.Loop {
-	return &cron.Loop{Tx: e.tm, Cluster: pg.ClusterRepo{}, Triggers: pg.NewTriggerRepo(e.gen), Starter: e.triggers,
+	return &cron.Loop{Tx: e.guard, Cluster: pg.ClusterRepo{}, Triggers: pg.NewTriggerRepo(e.gen), Starter: e.triggers,
 		Audit: pg.AuditRepo{}, IDs: e.gen, Clock: e.clock, MissedGrace: time.Minute}
 }
 

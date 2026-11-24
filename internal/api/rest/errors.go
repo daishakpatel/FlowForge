@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"math"
+	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -68,10 +71,26 @@ func classify(err error) *apperrors.Error {
 	if _, ok := errors.AsType[*pgconn.ConnectError](err); ok {
 		return apperrors.Unavailable("database unavailable", dbRetryAfter, err)
 	}
+	if connectionLost(err) {
+		return apperrors.Unavailable("database unavailable", dbRetryAfter, err)
+	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return apperrors.Unavailable("request timed out", dbRetryAfter, err)
 	}
 	return apperrors.FromError(err)
+}
+
+// connectionLost reports a database connection that broke under the request: the server dropped
+// or refused it (SQLSTATE class 08 except 08P01, a protocol violation that is a client bug, and
+// 57P01–57P03 while it shuts down or restarts), or the link failed (unexpected EOF, a network
+// error). A pooled connection hits these when Postgres goes away; none is the request's fault.
+func connectionLost(err error) bool {
+	if pe, ok := errors.AsType[*pgconn.PgError](err); ok {
+		c := pe.Code
+		return (strings.HasPrefix(c, "08") && c != "08P01") || c == "57P01" || c == "57P02" || c == "57P03"
+	}
+	_, isNet := errors.AsType[net.Error](err)
+	return isNet || errors.Is(err, io.ErrUnexpectedEOF)
 }
 
 func requestID(ctx context.Context) string {

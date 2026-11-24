@@ -22,6 +22,7 @@ import (
 	"github.com/daishakpatel/flowforge/internal/persistence"
 	"github.com/daishakpatel/flowforge/internal/persistence/pg"
 	"github.com/daishakpatel/flowforge/internal/testutil"
+	"github.com/daishakpatel/flowforge/internal/testutil/epochguard"
 	"github.com/daishakpatel/flowforge/internal/workflow/expr"
 	"github.com/daishakpatel/flowforge/internal/workflow/model"
 )
@@ -35,6 +36,7 @@ type env struct {
 	tasks    *pg.TaskRepo
 	attempts *pg.AttemptRepo
 	loop     *DecisionLoop
+	guard    *epochguard.Guard // the loop's TxManager: every loop transaction must assert the epoch first
 	clock    *clock.Fake
 	seq      atomic.Int64
 }
@@ -55,8 +57,10 @@ func newEnv(t *testing.T) *env {
 		defs: pg.NewDefinitionRepo(gen), runs: pg.NewRunRepo(gen, rec), tasks: pg.NewTaskRepo(rec),
 		attempts: pg.NewAttemptRepo(gen, rec),
 	}
+	e.guard = epochguard.New(e.tm)
+	t.Cleanup(func() { e.guard.Check(t) })
 	e.loop = &DecisionLoop{
-		DB: pool, Tx: e.tm, Cluster: pg.ClusterRepo{}, Sched: pg.SchedulerRepo{}, Notify: pg.SchedulerRepo{},
+		DB: pool, Tx: e.guard, Cluster: pg.ClusterRepo{}, Sched: pg.SchedulerRepo{}, Notify: pg.SchedulerRepo{},
 		Runs: e.runs, Tasks: e.tasks, Defs: e.defs, Inputs: TemplateResolver{}, Eval: expr.Evaluator{}, Clock: fc, Tick: time.Second,
 	}
 	return e

@@ -122,6 +122,19 @@ func validURL(s string) bool {
 	return err == nil && u.Scheme != "" && u.Host != ""
 }
 
+// raftElectionTimeout is the Raft KV's election timeout (00E §5.3: 10 ticks of 100 ms).
+const raftElectionTimeout = time.Second
+
+// leaseOutlastsFailover requires, in raft mode, a worker lease TTL of at least 3× the Raft
+// election timeout (task 04.07): a Raft leader change (about one election timeout, plus the
+// client's retry) must not expire the leases of workers that keep heartbeating through it.
+func leaseOutlastsFailover(coordination string, ttl time.Duration) []FieldError {
+	if coordination != "raft" || ttl >= 3*raftElectionTimeout {
+		return nil
+	}
+	return []FieldError{{Env: "FF_WORKER_LEASE_TTL", Msg: "must be at least 3s (3× the Raft election timeout) when FF_COORDINATION=raft"}}
+}
+
 // renewBelowHalf reports when renew is not strictly below ttl/2, so a lease survives one missed
 // renewal. Non-positive values are skipped: the positive rule already reports them.
 func renewBelowHalf(renewEnv string, renew time.Duration, ttlEnv string, ttl time.Duration) []FieldError {

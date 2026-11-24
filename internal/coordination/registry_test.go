@@ -319,3 +319,40 @@ func TestRegistry_RejectsBadWorkerIDs(t *testing.T) {
 		}
 	}
 }
+
+// stuckRevoke is a KV whose LeaseRevoke hangs until its context ends, like a Raft cluster
+// changing leader.
+type stuckRevoke struct{ coordination.KV }
+
+func (stuckRevoke) LeaseRevoke(ctx context.Context, _ uint64) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+// The best-effort revoke of a lease that holds no key is bounded on its own: a caller with a
+// short deadline (a heartbeat's 2 s) never waits for the client's 10 s default (code review,
+// 04.07).
+func TestRegistry_RevokeNeverOutwaitsTheCaller(t *testing.T) {
+	clk := clock.NewFake(time.UnixMilli(1_000_000))
+	reg, err := coordination.NewWorkerRegistry(stuckRevoke{fake.NewStore(clk).Client("api")}, coordination.RegistryConfig{TTL: workerTTL, Clock: clk})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reg.Register(t.Context(), worker("w1", "k")); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { _, err := reg.Register(ctx, worker("w1", "k")); done <- err }() // revokes the old lease
+	limit, stop := context.WithTimeout(t.Context(), 5*time.Second)
+	defer stop()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("re-register: %v", err)
+		}
+	case <-limit.Done():
+		t.Fatal("re-register waited on the revoke past its own deadline")
+	}
+}

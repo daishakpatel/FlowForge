@@ -19,9 +19,16 @@ type Scheduler struct {
 	// 3×heartbeat + TTL is abandoned.
 	WorkerLeaseTTL  time.Duration `env:"FF_WORKER_LEASE_TTL" default:"15s" validate:"positive"`
 	WorkerHeartbeat time.Duration `env:"FF_WORKER_HEARTBEAT" default:"5s" validate:"positive"`
-	LeaderTTL       time.Duration `env:"FF_LEADER_TTL" default:"10s" validate:"positive"`
-	LeaderRenew     time.Duration `env:"FF_LEADER_RENEW" default:"3s" validate:"positive"`
-	KafkaBrokers    []string      `env:"FF_KAFKA_BROKERS" default:"localhost:9092" validate:"addr"` // outbox relay
+	// Coordination selects leadership (task 04.07): local is single-scheduler mode (always
+	// leader at epoch 0, no Raft); raft elects one leader among the schedulers through the Raft
+	// KV at FF_RAFT_ENDPOINTS, with epoch fencing in Postgres, and reads worker liveness from
+	// Raft leases.
+	Coordination string `env:"FF_COORDINATION" default:"local" validate:"oneof=local raft"`
+	// NodeID names this scheduler among the candidates (raft mode); empty means the hostname.
+	NodeID       string        `env:"FF_SCHED_NODE_ID" default:""`
+	LeaderTTL    time.Duration `env:"FF_LEADER_TTL" default:"10s" validate:"positive"`
+	LeaderRenew  time.Duration `env:"FF_LEADER_RENEW" default:"3s" validate:"positive"`
+	KafkaBrokers []string      `env:"FF_KAFKA_BROKERS" default:"localhost:9092" validate:"addr"` // outbox relay
 	// EventPublisher is where the outbox relay publishes events (task 03.07): log (debug log
 	// lines), none (discard), or kafka (task 05.01).
 	EventPublisher string `env:"FF_EVENT_PUBLISHER" default:"log" validate:"oneof=log kafka none"`
@@ -61,6 +68,7 @@ func parseQueueLimit(item string) (string, int, bool) {
 func (c Scheduler) Redacted() map[string]string { return redacted(c) }
 
 func (c Scheduler) crossCheck() []FieldError {
-	return append(renewBelowHalf("FF_LEADER_RENEW", c.LeaderRenew, "FF_LEADER_TTL", c.LeaderTTL),
+	errs := append(renewBelowHalf("FF_LEADER_RENEW", c.LeaderRenew, "FF_LEADER_TTL", c.LeaderTTL),
 		renewBelowHalf("FF_WORKER_HEARTBEAT", c.WorkerHeartbeat, "FF_WORKER_LEASE_TTL", c.WorkerLeaseTTL)...)
+	return append(errs, leaseOutlastsFailover(c.Coordination, c.WorkerLeaseTTL)...)
 }

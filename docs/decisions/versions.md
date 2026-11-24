@@ -36,4 +36,5 @@ The one place agents record the versions they choose (`00C` §2.6, §10.3). Add 
 | `github.com/anishathalye/porcupine` | v1.3.1 | 2026-11-21 | 04.04 | MIT. Linearizability checker in the 00C §10.3 approved stack; test-only (`internal/testutil/porcupine`, `test/fault/raft`). Its `NondeterministicModel` models writes whose outcome is unknown. |
 | Image `golang` | 1.27.3-bookworm | 2026-11-22 | 04.06 | Build stage of `deploy/docker/Dockerfile.raft` (the Go service image pattern); matches `go.mod`'s Go version. Digest pinning is 09.02. |
 | Image `gcr.io/distroless/static-debian12` | nonroot | 2026-11-22 | 04.06 | Runtime stage of `Dockerfile.raft`: static binary, uid 65532, no shell. Digest pinning is 09.02. |
+| Image `curlimages/curl` | 8.11.1 | 2026-11-22 | 04.07 | Compose `worker-bootstrap` only (dev): creates the workers' API key. `Dockerfile.service` reuses the two images above. |
 | `go.etcd.io/bbolt` | v1.5.0 | 2026-11-19 | 04.01 | MIT. Durable Raft storage (`internal/raftkv/storage.Bolt`); opened with `NoSync: false`, so every commit fsyncs. |

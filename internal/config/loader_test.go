@@ -415,3 +415,43 @@ func TestLoad_WorkerShutdownAndCrashHandler(t *testing.T) {
 		t.Errorf("crash handler in dev: %q, %v", w.EnableCrashHandler, err)
 	}
 }
+
+// TestLoad_Coordination: FF_COORDINATION selects local (the default, single-scheduler mode) or
+// raft, and raft mode needs a worker lease TTL of at least 3× the Raft election timeout (04.07).
+func TestLoad_Coordination(t *testing.T) {
+	t.Parallel()
+	sch, err := Load[Scheduler](envOpts(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	api, err := Load[API](envOpts(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sch.Coordination != "local" || api.Coordination != "local" || sch.NodeID != "" {
+		t.Errorf("coordination defaults: scheduler %q node %q, api %q", sch.Coordination, sch.NodeID, api.Coordination)
+	}
+	for _, tc := range []struct {
+		env  map[string]string
+		want []string // fields that fail validation; nil: loads
+	}{
+		{map[string]string{"FF_COORDINATION": "raft", "FF_SCHED_NODE_ID": "scheduler-1"}, nil},
+		{map[string]string{"FF_COORDINATION": "zookeeper"}, []string{"FF_COORDINATION"}},
+		{map[string]string{"FF_COORDINATION": "raft", "FF_WORKER_LEASE_TTL": "2s", "FF_WORKER_HEARTBEAT": "500ms"}, []string{"FF_WORKER_LEASE_TTL"}},
+		{map[string]string{"FF_COORDINATION": "local", "FF_WORKER_LEASE_TTL": "2s", "FF_WORKER_HEARTBEAT": "500ms"}, nil},
+	} {
+		_, serr := Load[Scheduler](envOpts(tc.env))
+		_, aerr := Load[API](envOpts(tc.env))
+		for name, err := range map[string]error{"scheduler": serr, "api": aerr} {
+			if tc.want == nil {
+				if err != nil {
+					t.Errorf("%s %v: %v", name, tc.env, err)
+				}
+				continue
+			}
+			if got := validationFields(t, err); !slices.Equal(got, tc.want) {
+				t.Errorf("%s %v: invalid fields %v, want %v", name, tc.env, got, tc.want)
+			}
+		}
+	}
+}

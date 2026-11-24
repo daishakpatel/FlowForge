@@ -1,0 +1,23 @@
+# syntax=docker/dockerfile:1
+# FlowForge's Go services (task 04.07), built like deploy/docker/Dockerfile.raft: multi-stage,
+# static binary, non-root, no shell. SERVICE picks the command under ./cmd: flowforge-api,
+# flowforge-scheduler, flowforge-worker or flowforge-migrate. Hardening (digests, SBOM, read-only
+# root) is task 09.02. Image tags are pinned; keep them in step with docs/decisions/versions.md.
+# Build: docker build -f deploy/docker/Dockerfile.service --build-arg SERVICE=flowforge-api -t flowforge-api:dev .
+
+FROM golang:1.27.3-bookworm AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+ARG SERVICE
+ARG VERSION=dev
+RUN test -n "${SERVICE}" \
+ && CGO_ENABLED=0 go build -trimpath \
+      -ldflags "-s -w -X github.com/daishakpatel/flowforge/internal/version.version=${VERSION}" \
+      -o /out/service ./cmd/${SERVICE}
+
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=build /out/service /usr/local/bin/service
+USER 65532:65532
+ENTRYPOINT ["/usr/local/bin/service"]

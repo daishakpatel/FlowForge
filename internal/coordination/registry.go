@@ -145,16 +145,28 @@ func (r *WorkerRegistry) Register(ctx context.Context, info WorkerInfo) (LeaseHa
 		}
 	}
 	if err != nil || !ok {
-		_ = r.kv.LeaseRevoke(context.WithoutCancel(ctx), id) // holds no key; it would expire anyway
+		r.revoke(ctx, id)
 		if err != nil {
 			return LeaseHandle{}, fmt.Errorf("register worker %s: %w", info.ID, err)
 		}
 		return LeaseHandle{}, fmt.Errorf("%w: %s changed concurrently", ErrWorkerConflict, info.ID)
 	}
 	if old := cur.GetLeaseId(); old != 0 {
-		_ = r.kv.LeaseRevoke(context.WithoutCancel(ctx), old) // holds no key now; it would expire anyway
+		r.revoke(ctx, old)
 	}
 	return LeaseHandle{WorkerID: info.ID, LeaseID: id, Token: token, Info: info}, nil
+}
+
+// revokeTimeout bounds the best-effort revoke of a lease that holds no key.
+const revokeTimeout = time.Second
+
+// revoke ends a lease that holds no key, best effort: it would expire anyway. It survives the
+// caller's cancellation but has its own short bound, so a caller with a tight deadline (a
+// heartbeat's) never waits on a Raft leader change for the client's default timeout.
+func (r *WorkerRegistry) revoke(ctx context.Context, id uint64) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), revokeTimeout)
+	defer cancel()
+	_ = r.kv.LeaseRevoke(ctx, id) // best effort, see above
 }
 
 // Handle rebuilds a live worker's handle from its key (ErrNotRegistered when it has none).

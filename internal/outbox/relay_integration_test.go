@@ -18,14 +18,16 @@ import (
 	"github.com/daishakpatel/flowforge/internal/persistence/pg"
 	"github.com/daishakpatel/flowforge/internal/scheduler"
 	"github.com/daishakpatel/flowforge/internal/testutil"
+	"github.com/daishakpatel/flowforge/internal/testutil/epochguard"
 	"github.com/daishakpatel/flowforge/internal/workflow/model"
 	"github.com/daishakpatel/flowforge/internal/workflow/statemachine"
 )
 
 // pgEnv is a migrated database with n task events over runs runs, recorded the production way.
 type pgEnv struct {
-	pool *pgxpool.Pool
-	tm   *pg.TxManager
+	pool  *pgxpool.Pool
+	tm    *pg.TxManager
+	guard *epochguard.Guard // the relay's TxManager (04.07)
 }
 
 func newPGEnv(t *testing.T, n, runs int) *pgEnv {
@@ -37,6 +39,8 @@ func newPGEnv(t *testing.T, n, runs int) *pgEnv {
 	}
 	t.Cleanup(pool.Close)
 	e := &pgEnv{pool: pool, tm: pg.NewTxManager(pool, clock.Real{}, nil)}
+	e.guard = epochguard.New(e.tm)
+	t.Cleanup(func() { e.guard.Check(t) })
 	rec := events.NewRecorder(clock.Real{}, ids.NewGenerator(clock.Real{}, crand.Reader), "test")
 	for start := 0; start < n; start += 100 {
 		if err := e.tm.WithTx(t.Context(), pgx.TxOptions{}, func(tx pgx.Tx) error {
@@ -56,7 +60,7 @@ func newPGEnv(t *testing.T, n, runs int) *pgEnv {
 }
 
 func (e *pgEnv) relay(p Publisher, batch int) *RelayLoop {
-	return &RelayLoop{DB: e.pool, Tx: e.tm, Cluster: pg.ClusterRepo{}, Outbox: pg.OutboxRepo{}, Publisher: p, Clock: clock.Real{}, Batch: batch}
+	return &RelayLoop{DB: e.pool, Tx: e.guard, Cluster: pg.ClusterRepo{}, Outbox: pg.OutboxRepo{}, Publisher: p, Clock: clock.Real{}, Batch: batch}
 }
 
 // published returns the ids of the outbox rows marked published, in id order.

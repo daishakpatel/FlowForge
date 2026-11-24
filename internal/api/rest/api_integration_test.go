@@ -107,6 +107,10 @@ func newAPIEnv(t *testing.T) *apiEnv {
 	deps.Auth, deps.DB, deps.Tx, deps.APIKeys, deps.Audit = authn, pool, runs.Tx, pg.APIKeyRepo{}, pg.AuditRepo{}
 	deps.Workers, deps.Logs, deps.WorkerLeaseTTL = pg.WorkerRepo{}, pg.TaskLogRepo{}, 15*time.Second
 	deps.Events = streamHandler(pool, sse.DefaultMaxStreams)
+	deps.Cluster = ClusterInfo{Coordination: "local", // 04.07: local mode, Postgres sources only
+		Fence: func(ctx context.Context) (int64, string, error) { return pg.ClusterRepo{}.GetEpoch(ctx, pool) },
+		Alive: func(ctx context.Context) ([]persistence.WorkerView, error) { return pg.WorkerRepo{}.List(ctx, pool) },
+	}
 	deps.Triggers = &service.TriggerService{
 		DB: pool, Triggers: pg.NewTriggerRepo(g), DefRepo: runs.DefRepo, RunRepo: runs.RunRepo, Runs: runs, Clock: clock.Real{},
 	}
@@ -375,6 +379,8 @@ func TestContract_API(t *testing.T) {
 	want(t, code, 404, "attempts of a missing task")
 
 	// Workers and attempt logs (03.01).
+	code, _, _ = do("GET", "/api/v1/cluster/status", nil)
+	want(t, code, 200, "cluster status")
 	code, _, _ = do("GET", "/api/v1/workers", nil)
 	want(t, code, 200, "list workers")
 	_, body, _ = do("GET", "/api/v1/tasks/"+taskID+"/attempts", nil)

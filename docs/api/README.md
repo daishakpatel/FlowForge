@@ -30,6 +30,8 @@ Key management, roles, rate limits and the audit log are covered in [`authentica
 
 The command-line client, `flowforgectl`, is covered in [`cli.md`](cli.md).
 
+`GET /api/v1/cluster/status` (viewer, task 04.07) reports the scheduler leader and its epoch, the Raft cluster's health and the live worker count; a part whose source is down is `null` rather than an error. Its fields and the coordination modes are in [`leadership-and-fencing.md`](../architecture/leadership-and-fencing.md#events-and-status).
+
 ## Requests and limits
 
 | Limit | Value | Error |

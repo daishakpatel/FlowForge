@@ -524,6 +524,24 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '429': {$ref: '#/components/responses/RateLimited'}
         default: {$ref: '#/components/responses/Error'}
+  /api/v1/cluster/status:
+    get:
+      operationId: getClusterStatus
+      summary: Scheduler leader and epoch, Raft health and live workers (task 04.07)
+      description: >-
+        Each part is read separately and bounded (about 2 s). A part whose source is down is
+        null (raft.available is false) instead of failing the request, so the status answers
+        while Raft or Postgres is down. raft is null in local coordination mode.
+      responses:
+        '200':
+          description: The cluster as of fetched_at.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ClusterStatus'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        default: {$ref: '#/components/responses/Error'}
   /api/v1/attempts/{attempt_id}/logs:
     get:
       operationId: listAttemptLogs
@@ -1193,6 +1211,50 @@ components:
           type: array
           items: {$ref: '#/components/schemas/Worker'}
         next_cursor: {$ref: '#/components/schemas/NextCursor'}
+    ClusterStatus:
+      type: object
+      additionalProperties: false
+      required: [coordination, scheduler, raft, workers, fetched_at]
+      properties:
+        coordination: {type: string, enum: [local, raft], description: FF_COORDINATION.}
+        scheduler:
+          type: object
+          additionalProperties: false
+          required: [leader_id, epoch, since, fenced_epoch]
+          properties:
+            leader_id: {type: [string, 'null'], description: 'The scheduler holding the Raft leader key; null with no leader, or in local mode.'}
+            epoch: {type: [integer, 'null'], format: int64, description: "The leader key's fencing epoch."}
+            since: {type: [string, 'null'], format: date-time, description: 'When the leader campaigned.'}
+            fenced_epoch: {type: [integer, 'null'], format: int64, description: 'cluster_state.epoch in Postgres: the epoch every scheduler transaction asserts (ADR-003).'}
+        raft:
+          type: [object, 'null']
+          additionalProperties: false
+          required: [available, leader_id, term, commit_index, nodes]
+          properties:
+            available: {type: boolean, description: 'A Raft leader answered: the KV has quorum.'}
+            leader_id: {type: [integer, 'null']}
+            term: {type: [integer, 'null']}
+            commit_index: {type: [integer, 'null']}
+            nodes:
+              type: array
+              description: "The Raft leader's view of every voter."
+              items:
+                type: object
+                additionalProperties: false
+                required: [id, addr, reachable, match_index, lag]
+                properties:
+                  id: {type: integer}
+                  addr: {type: string}
+                  reachable: {type: boolean}
+                  match_index: {type: integer}
+                  lag: {type: integer, description: 'Commit index minus match index.'}
+        workers:
+          type: object
+          additionalProperties: false
+          required: [alive]
+          properties:
+            alive: {type: [integer, 'null'], description: 'Workers holding a live lease (Raft leases in raft mode); null when liveness cannot be read.'}
+        fetched_at: {type: string, format: date-time}
     LogLine:
       type: object
       additionalProperties: false

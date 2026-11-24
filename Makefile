@@ -18,10 +18,10 @@ LDFLAGS               := -X $(MODULE)/internal/version.version=$(VERSION) -X $(M
 COVER_PROFILE         := coverage.out
 COMPOSE               := docker compose --profile core --profile streaming
 
-.PHONY: help build test test-race test-integration test-crash test-e2e lint lint-selftest fmt tidy cover cover-check proto proto-check proto-breaking sqlc sqlc-check migrate-up migrate-status openapi-check clean dev-up dev-down dev-reset psql psql-md logs raft-up raft-down raft-status raft-logs raft-kill raft-restart
+.PHONY: help build test test-race test-integration test-crash test-e2e lint lint-selftest fmt tidy cover cover-check proto proto-check proto-breaking sqlc sqlc-check migrate-up migrate-status openapi-check clean dev-up dev-down dev-reset psql psql-md logs raft-up raft-down raft-status raft-logs raft-kill raft-restart test-e2e-raft failover-up failover-down
 
 help: ## List targets
-	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-18s %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-18s %s\n", $$1, $$2}'
 
 build: ## Compile everything; binaries under cmd/ go to bin/
 	go build ./...
@@ -41,6 +41,9 @@ test-crash: ## Crash-consistency tests: failpoints compiled in (tags integration
 
 test-e2e: ## Workflow-engine end-to-end suite: real binaries as subprocesses + Postgres in Docker (tag e2e; 03.09)
 	go test -count=1 -timeout=20m -tags=e2e -v ./test/e2e/
+
+test-e2e-raft: ## The same suite with FF_COORDINATION=raft: a 3-node flowforge-raft cluster per test (04.07)
+	FF_E2E_COORDINATION=raft go test -count=1 -timeout=30m -tags=e2e -v ./test/e2e/
 
 lint: ## golangci-lint (formatters + linters, incl. boundary rules)
 	@golangci-lint --version | grep -q " $(GOLANGCI_LINT_VERSION) " || echo "lint: warning: expected golangci-lint $(GOLANGCI_LINT_VERSION) (see docs/decisions/versions.md)"
@@ -140,3 +143,12 @@ raft-kill: ## Kill one Raft node (SIGKILL): make raft-kill N=2
 raft-restart: ## Start a stopped or killed Raft node again and wait until healthy: make raft-restart N=2
 	@test -n "$(N)" || { echo "usage: make raft-restart N=<1|2|3>"; exit 2; }
 	$(RAFT_COMPOSE) up -d --wait raft-$(N)
+
+# The control plane on Raft (04.07): Postgres, raft-1..3, the API on 127.0.0.1:8080, scheduler-1..3, worker-1..2.
+FAILOVER_COMPOSE := docker compose --profile core --profile raft
+
+failover-up: ## Build and start the Raft-coordinated control plane (3 schedulers, API, 2 workers) for the failover demo
+	$(FAILOVER_COMPOSE) up -d --build
+
+failover-down: ## Stop and remove the failover demo's containers (volumes are kept)
+	$(FAILOVER_COMPOSE) down

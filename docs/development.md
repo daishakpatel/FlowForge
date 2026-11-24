@@ -49,13 +49,13 @@ The connection strings the services use are in [`.env.example`](../.env.example)
 
 | Profile | Services today | Planned additions |
 |---|---|---|
-| `core` | `postgres` | API, scheduler, worker (09.02) |
+| `core` | `postgres` | API, scheduler, worker on their own (09.02) |
 | `streaming` | `timescaledb` | Kafka (05.01), market-data processor (05.x) |
-| `raft` | none yet | 3-node Raft cluster (04.06) |
+| `raft` | `raft-1..3` (04.06); `postgres`, `flowforge-migrate`, `flowforge-api`, `scheduler-1..3`, `worker-bootstrap`, `worker-1..2`: the control plane on Raft (04.07, `make failover-up` = `--profile core --profile raft`) | — |
 | `ai` | `postgres` (hosts `aiops`) | AI service (06.01) |
 | `ui` | none yet | dashboard (07.01) |
 | `obs` | none yet | Prometheus, Grafana, OTel Collector, Jaeger (08.x) |
-| `full` | `postgres`, `timescaledb` | everything |
+| `full` | `postgres`, `timescaledb`, `raft-1..3`, the control plane on Raft | everything |
 
 The `make dev-*` targets use `core` and `streaming`. For another combination, call Compose directly, for example `docker compose --profile full up -d --wait`.
 

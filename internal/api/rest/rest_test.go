@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -12,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/daishakpatel/flowforge/internal/api/auth"
 	"github.com/daishakpatel/flowforge/internal/apperrors"
@@ -146,6 +149,14 @@ func TestClassify(t *testing.T) {
 		"deadline":   {context.DeadlineExceeded, apperrors.CodeUnavailable},
 		"unknown":    {errors.New("pq: secret host 10.0.0.1"), apperrors.CodeInternal},
 		"wrapped ok": {errors.Join(errors.New("ctx"), apperrors.Conflict("dup")), apperrors.CodeConflict},
+		// A pooled connection the server dropped (Postgres stopping, or the database gone) is an
+		// outage, not a bad request: 503 with Retry-After (00_MASTER §6.2), found in 04.07.
+		"connection terminated": {fmt.Errorf("insert workflow definition: %w", &pgconn.PgError{Code: "57P01"}), apperrors.CodeUnavailable},
+		"connection exception":  {&pgconn.PgError{Code: "08006"}, apperrors.CodeUnavailable},
+		"constraint violation":  {&pgconn.PgError{Code: "23505", Message: "dup on 10.0.0.1"}, apperrors.CodeInternal},
+		"protocol violation":    {&pgconn.PgError{Code: "08P01"}, apperrors.CodeInternal}, // a client bug, not an outage
+		"server killed":         {fmt.Errorf("list runs: %w", io.ErrUnexpectedEOF), apperrors.CodeUnavailable},
+		"connection reset":      {&net.OpError{Op: "read", Net: "tcp", Err: errors.New("connection reset by peer")}, apperrors.CodeUnavailable},
 	}
 	for name, c := range cases {
 		e := classify(c.err)

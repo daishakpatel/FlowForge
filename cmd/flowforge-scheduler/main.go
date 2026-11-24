@@ -3,8 +3,11 @@
 // timeout and recovery loops (03.04) end overdue attempts and recover lost workers' work. It
 // never talks to workers.
 //
-// Leadership comes from scheduler.AlwaysLeader (single-scheduler mode, epoch 0) until task 04.07
-// adds the Raft-backed Gate. It refuses to start on a schema older than its migrations, serves
+// Leadership follows FF_COORDINATION (task 04.07): local is single-scheduler mode
+// (scheduler.AlwaysLeader, epoch 0, worker leases in Postgres); raft elects one leader among the
+// schedulers through the Raft KV, fences each term's epoch in Postgres before its loops start, and
+// reads worker liveness from Raft leases. A loop that finds its epoch stale stops this process
+// (exit 1): it was deposed, and a restart makes it a candidate again. It refuses to start on a schema older than its migrations, serves
 // /metrics, /healthz and /readyz on FF_SCHED_HTTP_ADDR, and on SIGTERM or SIGINT stops its loops
 // (an open decision transaction rolls back) and exits. Configuration: 00E §6.
 package main
@@ -76,7 +79,10 @@ func run(ctx context.Context, opts config.Options, logOut io.Writer, listen func
 	if err := migrate.RequireLatest(ctx, dsn, migrate.Flowforge); err != nil {
 		return err
 	}
-	pool, err := pg.NewPool(ctx, cfg.PGDSN)
+	// A scheduler frozen inside a transaction keeps AssertEpoch's share lock, which a new leader's
+	// fence activation waits for: Postgres ends such a session after 10 s (04.07). Scheduler
+	// transactions are short; the slowest step inside one is an outbox publish (keep it well under 10 s).
+	pool, err := pg.NewPool(ctx, cfg.PGDSN, pg.SessionParam("idle_in_transaction_session_timeout", "10s"))
 	if err != nil {
 		return err
 	}
@@ -105,7 +111,12 @@ func run(ctx context.Context, opts config.Options, logOut io.Writer, listen func
 		Attempts: pg.NewAttemptRepo(gen, rec), Tasks: tasks,
 		Outcomes: workerapi.NewRetryOutcomeHandler(tasks, runs, clock.Real{}, jitter),
 	}
-	runner := scheduler.NewRunner(scheduler.AlwaysLeader{})
+	lead, err := newLeadership(ctx, cfg, reg, logger, pool, txm, rec)
+	if err != nil {
+		return err
+	}
+	defer lead.close()
+	runner := scheduler.NewRunner(lead.gate)
 	runner.RegisterLoop(&scheduler.DecisionLoop{
 		DB: pool, Tx: txm, Cluster: pg.ClusterRepo{}, Sched: pg.SchedulerRepo{}, Notify: pg.SchedulerRepo{},
 		Runs: runs, Tasks: tasks, Defs: pg.NewDefinitionRepo(gen),
@@ -119,7 +130,7 @@ func run(ctx context.Context, opts config.Options, logOut io.Writer, listen func
 	})
 	runner.RegisterLoop(&recovery.Loop{
 		DB: pool, Tx: txm, Cluster: pg.ClusterRepo{}, Recovery: pg.RecoveryRepo{},
-		Leases: &workerapi.PGLeaseProvider{DB: pool, Workers: pg.WorkerRepo{}, Clock: clock.Real{}, TTL: cfg.WorkerLeaseTTL},
+		Leases: lead.leases,
 		Ender:  ender, Notify: pg.SchedulerRepo{}, Events: rec, Clock: clock.Real{}, Tick: 2 * time.Second,
 		LeaseTTL: cfg.WorkerLeaseTTL, Heartbeat: cfg.WorkerHeartbeat, Errors: loopErrors,
 	})
@@ -151,9 +162,17 @@ func run(ctx context.Context, opts config.Options, logOut io.Writer, listen func
 		defer close(wakerDone)
 		_ = waker.Run(ctx) // returns nil once ctx is done; it logs its own reconnects
 	}()
+	electDone := make(chan struct{})
+	go func() {
+		defer close(electDone)
+		if lead.elect != nil {
+			_ = lead.elect(ctx) // returns nil once ctx is done, after giving up any term and the leader key
+		}
+	}()
 	err = runner.Run(ctx)
 	cancel()
 	<-wakerDone
+	<-electDone
 	if serr := shutdown(context.WithoutCancel(ctx), srv, served); serr != nil && err == nil {
 		err = serr
 	}

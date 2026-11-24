@@ -104,8 +104,12 @@ func NewElector(cfg ElectorConfig, kv KV, fence EpochFence) (*Elector, error) {
 func (e *Elector) Gate() *Gate { return e.gate }
 
 // Current returns the leader key's value (a linearizable read), or ErrNoLeader.
-func (e *Elector) Current(ctx context.Context) (LeaderInfo, error) {
-	kv, err := e.kv.Get(ctx, LeaderKey)
+func (e *Elector) Current(ctx context.Context) (LeaderInfo, error) { return CurrentLeader(ctx, e.kv) }
+
+// CurrentLeader reads the scheduler leader key through kv (a linearizable read), or returns
+// ErrNoLeader; for readers that are not candidates, such as the API's cluster status (04.07).
+func CurrentLeader(ctx context.Context, k KV) (LeaderInfo, error) {
+	kv, err := k.Get(ctx, LeaderKey)
 	if errors.Is(err, client.ErrNotFound) {
 		return LeaderInfo{}, ErrNoLeader
 	}

@@ -335,3 +335,28 @@ Format: Context → Decision → Alternatives considered → Consequences.
     - `TestAdminAndMetrics_AgainstACluster`;
     - `TestCompose_ClusterServesSurvivesALeaderKillAndTransfers`.
 
+
+### ADR-003 / ADR-005 amendment — 04.07 — 2026-11-22
+- **What:** the Raft-coordinated control plane, as compatible extensions.
+  - **Config:** `FF_COORDINATION` (`local`, the default and the previous behaviour, or `raft`) for the API and scheduler; `FF_SCHED_NODE_ID` (default: the hostname). In raft mode `FF_WORKER_LEASE_TTL` must be ≥ 3 s, 3× the Raft election timeout.
+  - **Fencing:** `coordination.PGFence` implements `EpochFence` with `ClusterRepo.SetEpochIfGreater` and records `scheduler.leader_changed` in the same transaction. Re-activating the stored epoch for the same node succeeds (a retried activation); any other non-increase is an error and the term does not start.
+  - **Worker liveness:** `workerapi.RaftLeaseProvider` implements `LeaseProvider`. Register and Renew write Postgres, then Raft; Raft failures other than a conflict degrade (logged, counted, call succeeds), and Raft calls there are bounded at 2 s. `Expired` reports a worker only when Raft holds no live lease **and** Postgres has not seen it within the TTL; a failed Raft read is an error, so nothing is abandoned.
+  - **Events:** `worker.registered` is recorded by `workerapi.Service.Register`.
+  - **REST:** `GET /api/v1/cluster/status` (viewer). Its `/internal/v1` alias is left to 06.02, which owns that route group.
+  - **Small additions:** `coordination.CurrentLeader` (a non-candidate read of the leader key); the test helper `internal/testutil/epochguard`; `pg.PoolOption`/`pg.SessionParam`.
+  - **Bounded fencing (code review):** `PGFence.LockTimeout` (default 2 s, `SET LOCAL lock_timeout`) bounds the activation's wait for a deposed leader's share lock, and the scheduler's sessions set `idle_in_transaction_session_timeout = 10s`, so Postgres ends a frozen leader's open transaction.
+  - **Mode switch:** a local-mode scheduler refuses to start when `cluster_state.epoch` ≠ 0 (raft mode ran on that database) and names the reset.
+  - **Lease safety (code review):** a heartbeat never revives a worker deregistered meanwhile nor renews another key's lease; `WorkerRegistry`'s best-effort revokes have their own 1 s bound (a 04.05 defect: they ignored the caller's deadline).
+  - **Compose:** `flowforge-migrate`, `flowforge-api`, `scheduler-1..3`, `worker-bootstrap`, `worker-1..2` in profiles `raft` and `full`; `postgres` also joins `raft`; `deploy/docker/Dockerfile.service` builds every Go service.
+- **Why:**
+  - **Task 04.07 §4.**
+  - **The Postgres condition in `Expired`** is what keeps a Raft outage from looking like a worker outage. A worker that kept heartbeating has an expired Raft lease until its first heartbeat after quorum returns; without the condition the new leader would abandon it in that window (00_MASTER §6.2: "no spurious reassignment"). It only ever makes recovery more conservative: Raft expiry stays necessary.
+  - **Postgres in the `raft` profile:** Compose cannot require two profiles, and a `raft`-only project with services depending on `postgres` is invalid, which would break 04.06's `make raft-up`.
+- **Impact:**
+  - **Defaults:** unchanged, since `local` is the default; the e2e suite passes in both modes.
+  - **Deposed leader:** a scheduler deposed mid-decision exits on STALE_EPOCH, as the `Runner` contract already required, and needs a restart policy to come back as a candidate.
+  - **Takeover time** is about `FF_LEADER_TTL` + `FF_LEADER_RENEW`, so the 10 s target needs `FF_LEADER_TTL` ≤ about 7 s; the 00E defaults (10 s / 3 s) are unchanged and the Compose demo uses 6 s / 2 s.
+  - **Tested by:**
+    - `TestRaftLease_*`, `TestFencing_DeposedLeaderCannotCommit`, `TestEpochGuard_*` and `TestClusterStatus_*`;
+    - `TestRegister_RecordsWorkerRegistered` and `TestLoad_Coordination`;
+    - the `TestRaft_*` e2e tests.

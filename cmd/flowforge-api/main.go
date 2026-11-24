@@ -102,6 +102,11 @@ func run(ctx context.Context, opts config.Options, logOut io.Writer, listen func
 	rng := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 0))
 	txm := pg.NewTxManager(pool, clock.Real{}, rng)
 	reg := obs.NewRegistry()
+	leases, cluster, closeCoordination, err := newCoordination(cfg, reg, pool)
+	if err != nil {
+		return err
+	}
+	defer closeCoordination()
 	runRepo := pg.NewRunRepo(gen, rec)
 	// One LISTEN ff_events connection wakes every SSE stream (task 03.07).
 	eventsWaker := workerapi.NewChannelWaker(func(ctx context.Context) (*pgx.Conn, error) {
@@ -124,7 +129,8 @@ func run(ctx context.Context, opts config.Options, logOut io.Writer, listen func
 		Metrics: reg,
 		DB:      pool, Tx: txm, APIKeys: keys, Audit: pg.AuditRepo{}, RateLimitRPS: float64(cfg.RateLimitRPS),
 		Workers: pg.WorkerRepo{}, Logs: pg.TaskLogRepo{}, WorkerLeaseTTL: cfg.WorkerLeaseTTL,
-		Events: &sse.Handler{Hub: streams, DB: pool, Events: pg.EventRepo{}, Clock: clock.Real{}},
+		Events:  &sse.Handler{Hub: streams, DB: pool, Events: pg.EventRepo{}, Clock: clock.Real{}},
+		Cluster: cluster,
 		Ready: func(ctx context.Context) error {
 			if err := pool.Ping(ctx); err != nil {
 				return err
@@ -136,7 +142,7 @@ func run(ctx context.Context, opts config.Options, logOut io.Writer, listen func
 		return err
 	}
 
-	grpcSrv, waker, err := newWorkerServer(reg, authn, gen, logger, pool, txm, rec, cfg)
+	grpcSrv, waker, err := newWorkerServer(reg, authn, gen, logger, pool, txm, rec, leases, cfg)
 	if err != nil {
 		return err
 	}
@@ -213,9 +219,10 @@ func checkSchema(ctx context.Context, dsn config.Secret) error {
 }
 
 // newWorkerServer builds the worker gRPC server (task 03.01): interceptors, the 4 MiB message cap,
-// WorkerService with the default seams, and the LISTEN waker on its own connection.
+// WorkerService with the default seams, the lease provider FF_COORDINATION selects (04.07), and
+// the LISTEN waker on its own connection.
 func newWorkerServer(reg *obs.Registry, authn auth.Authenticator, gen ids.Generator, logger *slog.Logger,
-	pool *pgxpool.Pool, txm *pg.TxManager, rec *events.Recorder, cfg config.API) (*grpc.Server, *workerapi.Waker, error) {
+	pool *pgxpool.Pool, txm *pg.TxManager, rec *events.Recorder, leases workerapi.LeaseProvider, cfg config.API) (*grpc.Server, *workerapi.Waker, error) {
 	ic, err := workerapi.NewInterceptors(reg, authn, gen, logger, clock.Real{})
 	if err != nil {
 		return nil, nil, err
@@ -233,8 +240,8 @@ func newWorkerServer(reg *obs.Registry, authn auth.Authenticator, gen ids.Genera
 	svc := &workerapi.Service{
 		DB: pool, Tx: txm, Tasks: tasks, Attempts: pg.NewAttemptRepo(gen, rec), Workers: pg.WorkerRepo{},
 		Logs: pg.TaskLogRepo{}, Outcomes: retryHandler(tasks, gen, rec), Cancels: workerapi.RunCancelSource{DB: pool, Runs: pg.RunControlRepo{}},
-		Leases: &workerapi.PGLeaseProvider{DB: pool, Workers: pg.WorkerRepo{}, Clock: clock.Real{}, TTL: cfg.WorkerLeaseTTL},
-		Waker:  waker, Wake: pg.SchedulerRepo{}, Clock: clock.Real{}, LeaseTTL: cfg.WorkerLeaseTTL, HeartbeatInterval: cfg.WorkerHeartbeat,
+		Leases: leases, Events: rec,
+		Waker: waker, Wake: pg.SchedulerRepo{}, Clock: clock.Real{}, LeaseTTL: cfg.WorkerLeaseTTL, HeartbeatInterval: cfg.WorkerHeartbeat,
 		StaleRejections: stale.WithLabelValues(),
 	}
 	srv := grpc.NewServer(

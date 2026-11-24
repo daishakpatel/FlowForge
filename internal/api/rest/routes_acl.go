@@ -33,6 +33,7 @@ func routeACL() map[string]string {
 		"PATCH /api/v1/triggers/{trigger_id}":    auth.RoleAdmin,
 		"DELETE /api/v1/triggers/{trigger_id}":   auth.RoleAdmin,
 		"GET /api/v1/workers":                    auth.RoleViewer,
+		"GET /api/v1/cluster/status":             auth.RoleViewer,
 		"GET /api/v1/attempts/{attempt_id}/logs": auth.RoleViewer,
 		"GET /api/v1/events/stream":              auth.RoleViewer,
 	}
