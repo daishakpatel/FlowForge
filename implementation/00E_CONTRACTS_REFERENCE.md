@@ -318,7 +318,9 @@ Election tick 10 × 100 ms = 1 s heartbeat tick 1 (100 ms); `PreVote` and `Check
 | `FF_WORKER_HTTP_ADDR` | `:8082` (`/metrics`, `/healthz`, `/readyz`) | worker |
 | `FF_WORKER_SHUTDOWN_GRACE` | `30s` | worker |
 | `FF_WORKER_ENABLE_CRASH_HANDLER` | `false` (`true` rejected in `prod`; registers the `crash` chaos handler) | worker |
-| `FF_KAFKA_BROKERS` | `localhost:9092` | relay, worker, processor |
+| `FF_KAFKA_BROKERS` | `localhost:9092` (Compose: `kafka:9092` in the network, `localhost:19092` from the host; 05.01) | relay, worker, processor, flowforgectl topics |
+| `FF_KAFKA_CLIENT_ID` | `flowforge` (the Kafka client id; services set their own name; 05.01) | Kafka clients (`internal/kafka`) |
+| `FF_KAFKA_SECURITY_PROTOCOL` | `PLAINTEXT` (only value until 09.01 adds TLS and SASL; 05.01) | Kafka clients (`internal/kafka`) |
 | `FF_MD_PG_DSN` | `postgres://md:md@localhost:5433/marketdata?sslmode=disable` | processor, api(analytics), flowforge-migrate |
 | `FF_AI_URL`, `FF_AI_TOKEN` | `http://ai-ops:8000` | worker |
 | `AI_*` (Python: `AI_LLM_PROVIDER=mock|…`, `AI_EMBED_PROVIDER`, `AI_FLOWFORGE_URL`, `AI_FLOWFORGE_TOKEN`, `AI_PROM_URL`, `AI_DB_URL`) | — | ai-ops |
@@ -337,11 +339,14 @@ Config precedence: defaults < config file (optional `FF_CONFIG_FILE`) < env. Sec
 |---|---|---|---|---|
 | `market.ticks` | symbol | 6 | 7 d | validated ticks |
 | `market.invalid` | event_id or symbol | 3 | 14 d | DLQ (reason header) |
-| `market.aggregates` | symbol | 6 | 7 d | emitted aggregate updates (informational) |
+| `market.aggregates` | symbol | 6 | 7 d (`cleanup.policy=compact,delete`) | emitted aggregate updates (informational) |
 | `flowforge.workflow-events` | run_id | 3 | 7 d | run lifecycle |
 | `flowforge.task-events` | run_id | 3 | 7 d | task/attempt lifecycle (keyed by run for ordering) |
+| `flowforge.dlq` | run_id | 3 | 14 d | outbox events the relay could not publish after its retries (05.08; added by 05.01) |
 
-Envelope (JSON Schema `schemas/events/envelope.v1.schema.json`):
+Topics are created by `make topics` from `deploy/kafka/topics.yaml` (05.01), which must match this table; the broker never auto-creates topics. Replication factor 1 in dev.
+
+Envelope (JSON Schema `schemas/events/envelope.v1.schema.json`; Go type `pkg/events.Envelope[T]`, validator `pkg/events.Registry`; schema names, payload schemas and compatibility test in `docs/architecture/event-schemas.md`, 05.01). Every record value on every topic is this envelope; workflow events validate against `flowforge_event.v1`, and each `event_type`/`event_version` known to `envelope.v1` has its payload schema (`workflow_*.v1`, `market_tick.v1`, `market_aggregate.v1`, `market_invalid.v1`):
 ```json
 {"event_id":"evt_…","event_type":"task.attempt.failed","event_version":1,
  "occurred_at":"2026-11-02T14:30:00Z","producer":"flowforge-api",

@@ -193,7 +193,7 @@ func unknownKeys(file map[string]string, fields []field) []FieldError {
 // serviceFields lists the fields of every service config struct.
 func serviceFields() []field {
 	var out []field
-	for _, cfg := range []any{API{}, Scheduler{}, Worker{}, Raft{}, Processor{}, Migrate{}} {
+	for _, cfg := range []any{API{}, Scheduler{}, Worker{}, Raft{}, Processor{}, Migrate{}, Kafka{}} {
 		out = append(out, collect(reflect.ValueOf(cfg))...)
 	}
 	return out

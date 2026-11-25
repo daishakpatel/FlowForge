@@ -122,8 +122,9 @@ linters:
         text: time\.
         linters:
           - forbidigo
-      # internal/testutil reads FF_TEST_* (00A amendment, 01.02); only the env rule is lifted.
-      - path: (^|/)internal/(config|testutil)/
+      # internal/testutil and internal/kafka/kafkatest read FF_TEST_* (00A amendments, 01.02 and
+      # 05.01); only the env rule is lifted.
+      - path: (^|/)internal/(config|testutil|kafka/kafkatest)/
         text: os\.(Getenv|LookupEnv|Environ)
         linters:
           - forbidigo
