@@ -278,7 +278,7 @@ func envelope(e persistence.EventView) ([]byte, error) {
 		agg = e.RunID
 	}
 	b, err := json.Marshal(events.Envelope{
-		EventID: e.EventID, EventType: e.Type, EventVersion: e.Version, OccurredAt: e.CreatedAt.UTC(),
+		EventID: e.EventID, EventType: string(e.Type), EventVersion: e.Version, OccurredAt: e.CreatedAt.UTC(),
 		CorrelationID: e.CorrelationID, AggregateID: agg, Payload: e.Payload,
 	})
 	if err != nil {

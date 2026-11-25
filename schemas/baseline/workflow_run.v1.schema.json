@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flowforge.example/schemas/events/workflow_run.v1.schema.json",
+  "title": "Run event payload, version 1",
+  "description": "Payload of the run.* events (internal/events.RunPayload).",
+  "type": "object",
+  "required": [
+    "run_id",
+    "definition_id",
+    "status"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "definition_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "status": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z_]*$"
+    },
+    "previous_status": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z_]*$"
+    },
+    "task_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "reason": {
+      "type": "string",
+      "maxLength": 1024
+    },
+    "actor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "superseded_task_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      }
+    },
+    "rerun_task_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      }
+    }
+  },
+  "examples": [
+    {
+      "run_id": "run_01JCX0000000000000000000",
+      "definition_id": "def_01JCX0000000000000000000",
+      "status": "RUNNING",
+      "previous_status": "PENDING"
+    }
+  ]
+}

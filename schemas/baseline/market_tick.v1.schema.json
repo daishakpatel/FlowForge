@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flowforge.example/schemas/events/market_tick.v1.schema.json",
+  "title": "Market tick, version 1",
+  "description": "Payload of market.tick events on market.ticks (00E §7). event_time must not be more than 5 s ahead of the receiver's clock: a domain rule the schema cannot express (05.02).",
+  "type": "object",
+  "required": [
+    "event_id",
+    "symbol",
+    "event_time",
+    "price",
+    "size",
+    "source"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "symbol": {
+      "type": "string",
+      "pattern": "^[A-Z]{1,6}(\\.[A-Z])?$"
+    },
+    "event_time": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "ingested_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "price": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "size": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "source": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*$",
+      "maxLength": 64
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "examples": [
+    {
+      "event_id": "3f786850e387550fdab836ed7e6dc881de23001b",
+      "symbol": "ACME",
+      "event_time": "2026-11-02T14:30:00.250Z",
+      "ingested_at": "2026-11-02T14:30:00.400Z",
+      "price": 101.25,
+      "size": 300,
+      "source": "synthetic",
+      "sequence": 42
+    }
+  ]
+}

@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flowforge.example/schemas/events/workflow_attempt.v1.schema.json",
+  "title": "Attempt event payload, version 1",
+  "description": "Payload of the task.attempt.* events (internal/events.AttemptPayload).",
+  "type": "object",
+  "required": [
+    "run_id",
+    "task_id",
+    "attempt_id",
+    "attempt_number",
+    "fencing_token",
+    "status"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "attempt_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "attempt_number": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "worker_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "fencing_token": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "status": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z_]*$"
+    },
+    "error_code": {
+      "type": "string",
+      "maxLength": 128
+    },
+    "retryable": {
+      "type": "boolean"
+    }
+  },
+  "examples": [
+    {
+      "run_id": "run_01JCX0000000000000000000",
+      "task_id": "task_01JCX0000000000000000000",
+      "attempt_id": "att_01JCX0000000000000000000",
+      "attempt_number": 1,
+      "worker_id": "wrk_01JCX0000000000000000000",
+      "fencing_token": 7,
+      "status": "FAILED",
+      "error_code": "TASK_TIMEOUT",
+      "retryable": true
+    }
+  ]
+}

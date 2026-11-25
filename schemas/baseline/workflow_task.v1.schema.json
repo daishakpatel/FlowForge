@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flowforge.example/schemas/events/workflow_task.v1.schema.json",
+  "title": "Task event payload, version 1",
+  "description": "Payload of the task.* events other than task.attempt.* (internal/events.TaskPayload).",
+  "type": "object",
+  "required": [
+    "run_id",
+    "task_id",
+    "task_key",
+    "status",
+    "attempt_count"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "task_key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "status": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z_]*$"
+    },
+    "previous_status": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z_]*$"
+    },
+    "attempt_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "retry_delay_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "error_code": {
+      "type": "string",
+      "maxLength": 128
+    }
+  },
+  "examples": [
+    {
+      "run_id": "run_01JCX0000000000000000000",
+      "task_id": "task_01JCX0000000000000000000",
+      "task_key": "fetch",
+      "status": "QUEUED",
+      "previous_status": "READY",
+      "attempt_count": 0
+    }
+  ]
+}

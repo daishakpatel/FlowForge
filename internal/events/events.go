@@ -51,7 +51,7 @@ func (r *Recorder) Record(ctx context.Context, tx pgx.Tx, e Event) error {
 	}
 	env := Envelope{
 		EventID:       r.ids.New(ids.PrefixEvent),
-		EventType:     e.Type,
+		EventType:     string(e.Type),
 		EventVersion:  e.Version,
 		OccurredAt:    r.clock.Now().UTC(),
 		Producer:      r.producer,

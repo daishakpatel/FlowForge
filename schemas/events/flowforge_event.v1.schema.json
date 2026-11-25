@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flowforge.example/schemas/events/flowforge_event.v1.schema.json",
+  "title": "FlowForge workflow event, version 1",
+  "description": "A workflow event published by the outbox relay to flowforge.workflow-events or flowforge.task-events (00E §7, ADR-009): the envelope with one of the workflow event types.",
+  "type": "object",
+  "required": [
+    "event_type"
+  ],
+  "properties": {
+    "event_type": {
+      "enum": [
+        "run.created",
+        "run.started",
+        "run.paused",
+        "run.resumed",
+        "run.succeeded",
+        "run.failed",
+        "run.cancelled",
+        "run.needs_attention",
+        "task.ready",
+        "task.queued",
+        "task.started",
+        "task.succeeded",
+        "task.failed",
+        "task.retry_scheduled",
+        "task.timed_out",
+        "task.cancelled",
+        "task.skipped",
+        "task.attempt.started",
+        "task.attempt.succeeded",
+        "task.attempt.failed",
+        "task.attempt.timed_out",
+        "task.attempt.abandoned",
+        "approval.requested",
+        "approval.decided",
+        "approval.executed",
+        "worker.registered",
+        "worker.lost",
+        "scheduler.leader_changed"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "$ref": "envelope.v1.schema.json"
+    }
+  ],
+  "examples": [
+    {
+      "event_id": "evt_01JCX0000000000000000000",
+      "event_type": "task.queued",
+      "event_version": 1,
+      "occurred_at": "2026-11-02T14:30:00Z",
+      "producer": "flowforge-scheduler",
+      "correlation_id": "run_01JCX0000000000000000000",
+      "aggregate_id": "task_01JCX0000000000000000000",
+      "payload": {
+        "run_id": "run_01JCX0000000000000000000",
+        "task_id": "task_01JCX0000000000000000000",
+        "task_key": "fetch",
+        "status": "QUEUED",
+        "previous_status": "READY",
+        "attempt_count": 0
+      }
+    }
+  ]
+}

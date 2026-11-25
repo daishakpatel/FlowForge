@@ -1,0 +1,329 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flowforge.example/schemas/events/envelope.v1.schema.json",
+  "title": "FlowForge event envelope, version 1",
+  "description": "Every FlowForge Kafka record value (00E §7). Known event types (event_type and event_version) also have their payload checked against its schema; others keep any object payload, so a newer producer's events still pass. Consumers ignore unknown fields (docs/architecture/event-schemas.md).",
+  "type": "object",
+  "required": [
+    "event_id",
+    "event_type",
+    "event_version",
+    "occurred_at",
+    "producer",
+    "correlation_id",
+    "aggregate_id",
+    "payload"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "event_type": {
+      "type": "string",
+      "pattern": "^[a-z][a-z_]*(\\.[a-z][a-z_]*)+$",
+      "maxLength": 64
+    },
+    "event_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "producer": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "correlation_id": {
+      "type": "string",
+      "maxLength": 128
+    },
+    "aggregate_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "trace": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$"
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "event_type",
+          "event_version"
+        ],
+        "properties": {
+          "event_type": {
+            "enum": [
+              "run.created",
+              "run.started",
+              "run.paused",
+              "run.resumed",
+              "run.succeeded",
+              "run.failed",
+              "run.cancelled",
+              "run.needs_attention"
+            ]
+          },
+          "event_version": {
+            "const": 1
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "workflow_run.v1.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "event_type",
+          "event_version"
+        ],
+        "properties": {
+          "event_type": {
+            "enum": [
+              "task.ready",
+              "task.queued",
+              "task.started",
+              "task.succeeded",
+              "task.failed",
+              "task.retry_scheduled",
+              "task.timed_out",
+              "task.cancelled",
+              "task.skipped"
+            ]
+          },
+          "event_version": {
+            "const": 1
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "workflow_task.v1.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "event_type",
+          "event_version"
+        ],
+        "properties": {
+          "event_type": {
+            "enum": [
+              "task.attempt.started",
+              "task.attempt.succeeded",
+              "task.attempt.failed",
+              "task.attempt.timed_out",
+              "task.attempt.abandoned"
+            ]
+          },
+          "event_version": {
+            "const": 1
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "workflow_attempt.v1.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "event_type",
+          "event_version"
+        ],
+        "properties": {
+          "event_type": {
+            "enum": [
+              "approval.requested",
+              "approval.decided",
+              "approval.executed"
+            ]
+          },
+          "event_version": {
+            "const": 1
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "workflow_approval.v1.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "event_type",
+          "event_version"
+        ],
+        "properties": {
+          "event_type": {
+            "enum": [
+              "worker.registered",
+              "worker.lost"
+            ]
+          },
+          "event_version": {
+            "const": 1
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "workflow_worker.v1.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "event_type",
+          "event_version"
+        ],
+        "properties": {
+          "event_type": {
+            "enum": [
+              "scheduler.leader_changed"
+            ]
+          },
+          "event_version": {
+            "const": 1
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "workflow_leader_changed.v1.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "event_type",
+          "event_version"
+        ],
+        "properties": {
+          "event_type": {
+            "enum": [
+              "market.tick"
+            ]
+          },
+          "event_version": {
+            "const": 1
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "market_tick.v1.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "event_type",
+          "event_version"
+        ],
+        "properties": {
+          "event_type": {
+            "enum": [
+              "market.aggregate"
+            ]
+          },
+          "event_version": {
+            "const": 1
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "market_aggregate.v1.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "event_type",
+          "event_version"
+        ],
+        "properties": {
+          "event_type": {
+            "enum": [
+              "market.invalid"
+            ]
+          },
+          "event_version": {
+            "const": 1
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "market_invalid.v1.schema.json"
+          }
+        }
+      }
+    }
+  ],
+  "examples": [
+    {
+      "event_id": "3f786850e387550fdab836ed7e6dc881de23001b",
+      "event_type": "market.tick",
+      "event_version": 1,
+      "occurred_at": "2026-11-02T14:30:00.250Z",
+      "producer": "marketdata-producer",
+      "correlation_id": "ACME",
+      "aggregate_id": "ACME",
+      "trace": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+      "payload": {
+        "event_id": "3f786850e387550fdab836ed7e6dc881de23001b",
+        "symbol": "ACME",
+        "event_time": "2026-11-02T14:30:00.250Z",
+        "ingested_at": "2026-11-02T14:30:00.400Z",
+        "price": 101.25,
+        "size": 300,
+        "source": "synthetic",
+        "sequence": 42
+      }
+    }
+  ]
+}

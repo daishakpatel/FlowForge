@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flowforge.example/schemas/events/workflow_leader_changed.v1.schema.json",
+  "title": "Scheduler leader change payload, version 1",
+  "description": "Payload of scheduler.leader_changed (internal/events.LeaderChangedPayload).",
+  "type": "object",
+  "required": [
+    "node_id",
+    "epoch"
+  ],
+  "properties": {
+    "node_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "epoch": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "examples": [
+    {
+      "node_id": "scheduler-1",
+      "epoch": 3
+    }
+  ]
+}

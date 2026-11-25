@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flowforge.example/schemas/events/workflow_worker.v1.schema.json",
+  "title": "Worker event payload, version 1",
+  "description": "Payload of the worker.* events (internal/events.WorkerPayload).",
+  "type": "object",
+  "required": [
+    "worker_id"
+  ],
+  "properties": {
+    "worker_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "reason": {
+      "type": "string",
+      "maxLength": 128
+    }
+  },
+  "examples": [
+    {
+      "worker_id": "wrk_01JCX0000000000000000000",
+      "reason": "lease_expired"
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flowforge.example/schemas/events/market_invalid.v1.schema.json",
+  "title": "Rejected market event, version 1",
+  "description": "Payload of market.invalid events on the market.invalid DLQ: the original record and why it was rejected (05.04). original is the record value, base64-encoded because it may not be JSON.",
+  "type": "object",
+  "required": [
+    "reason",
+    "original",
+    "source_topic",
+    "source_partition",
+    "source_offset"
+  ],
+  "properties": {
+    "reason": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "maxLength": 64
+    },
+    "detail": {
+      "type": "string",
+      "maxLength": 1024
+    },
+    "original": {
+      "type": "string",
+      "contentEncoding": "base64"
+    },
+    "source_topic": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 249
+    },
+    "source_partition": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "source_offset": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "examples": [
+    {
+      "reason": "schema_invalid",
+      "detail": "/payload/price: must be > 0",
+      "original": "eyJldmVudF9pZCI6IngifQ==",
+      "source_topic": "market.ticks",
+      "source_partition": 2,
+      "source_offset": 1042
+    }
+  ]
+}

@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flowforge.example/schemas/events/market_aggregate.v1.schema.json",
+  "title": "Market window aggregate, version 1",
+  "description": "Payload of market.aggregate events on market.aggregates: one event-time window of one symbol (00E §12 market_ohlcv; formulas there).",
+  "type": "object",
+  "required": [
+    "symbol",
+    "window_size",
+    "window_start",
+    "event_count",
+    "anomaly",
+    "input_hash"
+  ],
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "pattern": "^[A-Z]{1,6}(\\.[A-Z])?$"
+    },
+    "window_size": {
+      "enum": [
+        "1m",
+        "5m"
+      ]
+    },
+    "window_start": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "open": {
+      "type": "number"
+    },
+    "high": {
+      "type": "number"
+    },
+    "low": {
+      "type": "number"
+    },
+    "close": {
+      "type": "number"
+    },
+    "volume": {
+      "type": "number",
+      "minimum": 0
+    },
+    "vwap": {
+      "type": "number"
+    },
+    "event_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "moving_avg": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "volatility": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "anomaly": {
+      "type": "boolean"
+    },
+    "input_hash": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "last_updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "examples": [
+    {
+      "symbol": "ACME",
+      "window_size": "1m",
+      "window_start": "2026-11-02T14:30:00Z",
+      "open": 101.0,
+      "high": 101.5,
+      "low": 100.75,
+      "close": 101.25,
+      "volume": 1200,
+      "vwap": 101.1,
+      "event_count": 4,
+      "moving_avg": 101.05,
+      "volatility": null,
+      "anomaly": false,
+      "input_hash": "9c56cc51b374c3ba189210d5b6d4bf57790d351c",
+      "last_updated_at": "2026-11-02T14:31:00Z"
+    }
+  ]
+}
