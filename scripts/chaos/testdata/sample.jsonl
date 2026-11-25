@@ -1,0 +1,7 @@
+{"id":"C1","scenario":"Kill leader (container)","level":"container","fault":"docker compose kill","expected":"writes within 3 s","observed":"raft-1 killed","pass":true,"ttr_seconds":1.5,"target":"Raft failover ≤ 3s","target_met":true,"ops":100,"at":"2026-11-23T01:00:00Z"}
+{"id":"1","scenario":"Kill leader","level":"in-process","fault":"Kill | leader","expected":"new leader","observed":"first run","pass":true,"ttr_seconds":1.2,"target":"Raft failover ≤ 3s","target_met":true,"ops":900,"at":"2026-11-23T00:00:00Z"}
+{"id":"1","scenario":"Kill leader","level":"in-process","fault":"Kill | leader","expected":"new leader","observed":"second run","pass":true,"ttr_seconds":3.4,"target":"Raft failover ≤ 3s","target_met":false,"ops":1000,"at":"2026-11-23T00:10:00Z"}
+
+{"id":"N","scenario":"Negative control","level":"in-process","fault":"stale read","expected":"Illegal","observed":"Illegal","pass":true,"ops":3,"at":"2026-11-23T00:05:00Z"}
+{"id":"X2","scenario":"Leader transfer","level":"in-process","fault":"transfer","expected":"ok","observed":"ok","pass":false,"ttr_seconds":0.1,"ops":50,"at":"2026-11-23T00:06:00Z"}
+{"id":"10","scenario":"Consistency","level":"in-process","fault":"chaos","expected":"same hash","observed":"same","pass":true,"ttr_seconds":2.0,"ops":70,"at":"2026-11-23T00:07:00Z"}
