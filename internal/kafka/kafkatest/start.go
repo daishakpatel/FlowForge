@@ -30,8 +30,10 @@ import (
 
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
+	"github.com/twmb/franz-go/pkg/kadm"
 
 	"github.com/daishakpatel/flowforge/internal/kafka"
+	"github.com/daishakpatel/flowforge/internal/testutil"
 )
 
 // Image matches the kafka service in docker-compose.yml; update both together.
@@ -86,7 +88,8 @@ func (b *Broker) Config() kafka.Config {
 }
 
 // Topic creates a topic with a unique name (test-<hex>) and the given partitions, and deletes it
-// when the test ends.
+// when the test ends. It returns once the broker lists the topic with a leader for every partition:
+// right after CreateTopic it may not yet, and a produce then fails with UNKNOWN_TOPIC_OR_PARTITION.
 func (b *Broker) Topic(t testing.TB, partitions int32) string {
 	t.Helper()
 	name := Name("test")
@@ -104,6 +107,7 @@ func (b *Broker) Topic(t testing.TB, partitions int32) string {
 	if err != nil {
 		t.Fatalf("kafkatest: create topic %s: %v", name, err)
 	}
+	testutil.WaitFor(t, func() bool { return ready(ctx, adm, name, partitions) }, time.Minute)
 	t.Cleanup(func() {
 		// t.Context() is already cancelled when cleanups run.
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -113,6 +117,20 @@ func (b *Broker) Topic(t testing.TB, partitions int32) string {
 		}
 	})
 	return name
+}
+
+// ready reports whether the broker lists topic with the given partitions, each with a leader.
+func ready(ctx context.Context, adm *kadm.Client, topic string, partitions int32) bool {
+	d, err := adm.ListTopics(ctx, topic)
+	if err != nil || d[topic].Err != nil || len(d[topic].Partitions) != int(partitions) {
+		return false
+	}
+	for _, p := range d[topic].Partitions {
+		if p.Err != nil || p.Leader < 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // Name returns prefix-<16 hex chars>, unique per call: for topics and consumer groups.
