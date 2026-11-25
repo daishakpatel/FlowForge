@@ -360,3 +360,22 @@ Format: Context → Decision → Alternatives considered → Consequences.
     - `TestRaftLease_*`, `TestFencing_DeposedLeaderCannotCommit`, `TestEpochGuard_*` and `TestClusterStatus_*`;
     - `TestRegister_RecordsWorkerRegistered` and `TestLoad_Coordination`;
     - the `TestRaft_*` e2e tests.
+
+### ADR-019 amendment — 04.08 — 2026-11-23
+- **What:**
+  - **Container-level network faults** use `docker network disconnect` (`test/fault/dockerctl`), not Toxiproxy. Latency is injected only in process, with 04.02's `transport.Fault`.
+  - **The Raft fault suite** (`test/fault/raft`, build tag `fault`) runs at two levels:
+    - in process on `kvtest`, at the production Raft timing; this is what CI runs;
+    - container level on the Compose `raft-1..3`, with `FF_FAULT_CONTAINERS=1`; this runs nightly.
+  - **`kvtest` gains test-harness options:**
+    - `Options.Faults` (with `Partition`, `Heal`, `SetFaults`) and `FaultSeed`;
+    - `Options.MemberClock`;
+    - `Options.WrapStorage`;
+    - `Cluster.Backup`/`Restore`.
+  - **Lint** builds the `fault` tag too, and lifts forbidigo for `test/fault/` as for `test/e2e/`.
+- **Why:**
+  - **Disconnect over Toxiproxy:** the task allows either if documented. A disconnect is a clean partition for peers and host clients alike, and needs no extra service or image. Latency is deterministic (seeded) in process.
+  - **The harness options:** scenarios 5, 6, 7, 9, X3 and X4 need them.
+- **Impact:**
+  - **No production code or contract changes.** The `kvtest` additions are opt-in, and existing users are unchanged.
+  - **No Toxiproxy service** in Compose; ADR-019's "Toxiproxy" remains an option for later latency work at container level.

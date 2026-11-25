@@ -517,7 +517,7 @@ Tick when the task's completion report exists and all acceptance criteria are me
 - [x] `04.05` Coordination library: leader election, fencing epochs, worker leases — `phase-04-raft-coordination/04.05_coordination_library.md`
 - [x] `04.06` 3-node Raft cluster in Compose: cluster status, health, metrics, operator tooling — `phase-04-raft-coordination/04.06_cluster_compose_status_metrics.md`
 - [x] `04.07` Integrate Raft: scheduler leadership + Postgres epoch fencing + worker leases — `phase-04-raft-coordination/04.07_scheduler_leadership_worker_leases_integration.md`
-- [ ] `04.08` Phase gate: Raft fault-injection and linearizability suite — `phase-04-raft-coordination/04.08_raft_fault_injection_suite.md`
+- [x] `04.08` Phase gate: Raft fault-injection and linearizability suite — `phase-04-raft-coordination/04.08_raft_fault_injection_suite.md`
 
 **Phase 05 — Kafka Streaming and Market-Data Workload**
 

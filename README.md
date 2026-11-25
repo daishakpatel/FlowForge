@@ -11,6 +11,7 @@ make dev-up             # local Postgres (flowforge, aiops) and TimescaleDB (mar
 make raft-up            # 3-node Raft KV cluster (raft-1..3, clients on 127.0.0.1:7001-7003); raft-status, raft-kill N=, raft-restart N=, raft-down
 make failover-up        # the control plane on Raft: 3 schedulers (one leader), API on 127.0.0.1:8080, 2 workers; failover-down
 make test-e2e-raft      # the e2e suite with FF_COORDINATION=raft (make test-e2e runs it in local mode)
+make test-fault-raft    # the Raft fault-injection suite (5 runs; FF_FAULT_CONTAINERS=1 adds the Compose scenarios) → docs/testing/raft-fault-report.md
 make migrate-up         # create the flowforge schema (make migrate-status shows the version)
 make test-integration   # integration tests against real databases
 make test-crash         # crash-consistency tests with failpoints compiled in (docs/architecture/recovery.md)

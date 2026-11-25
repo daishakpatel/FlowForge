@@ -327,6 +327,7 @@ Election tick 10 × 100 ms = 1 s heartbeat tick 1 (100 ms); `PreVote` and `Check
 | `FF_TEST_PG_DSN` / `FF_TEST_MD_DSN` | unset (start containers) | `internal/testutil`: admin DSN (URL form) of an existing server (tests only) |
 | `FF_FAILPOINTS` | unset (test builds with tag `failpoint` only: `name=error|panic,…`) | crash-consistency tests (03.04) |
 | `FF_TEST_REQUIRE_DOCKER` | unset (skip without Docker) | `internal/testutil`: fail instead of skip when containers can't start (tests only; CI sets it) |
+| `FF_FAULT_RESULTS` / `FF_FAULT_CONTAINERS` / `FF_FAULT_ARTIFACTS` | unset (no results file / in-process scenarios only / temp dir) | `test/fault/raft` (tests only, 04.08): results file, run the container-level scenarios (`1`), where non-linearizable histories are kept |
 
 Config precedence: defaults < config file (optional `FF_CONFIG_FILE`) < env. Secrets never logged (§ redaction). Loader, file format and validation rules: `docs/configuration.md` (task 01.03).
 

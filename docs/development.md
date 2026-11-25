@@ -23,6 +23,7 @@ make lint test         # what CI runs first (lint includes integration-tagged fi
 make test-race         # unit tests with the race detector
 make test-integration  # integration tests against real databases (10-minute timeout)
 make test-e2e          # real binaries as subprocesses + the chaos soak (docs/testing/e2e.md)
+make test-fault-raft   # the Raft fault suite, 5 runs, renders docs/testing/raft-fault-report.md (docs/testing/fault-injection.md)
 make lint-selftest     # prove the package-boundary lint rules still fire
 make cover-check       # 70 % coverage gate on the gated packages that exist
 

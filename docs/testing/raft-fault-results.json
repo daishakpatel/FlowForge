@@ -1,0 +1,431 @@
+{
+  "rows": 110,
+  "last_run_at": "2026-11-24T04:44:45Z",
+  "scenarios_passed": 22,
+  "scenarios": [
+    {
+      "id": "1",
+      "scenario": "Kill leader",
+      "level": "in-process",
+      "fault": "the leader's node stops abruptly (kvtest Kill: listener and loop gone, as SIGKILL)",
+      "expected": "the other two elect a leader in a higher term; writes succeed again within 3 s; linearizable; all converge after the old leader restarts",
+      "observed": "leader 3 killed; 1 leads in term 3; first write succeeded 1.31 s after the kill; history of 29940 operations (13 writes with unknown outcome) is linearizable; members [1 2 3] converged: state hash 69d81ea1… at applied index 17963",
+      "runs": 5,
+      "expected_runs": 5,
+      "passed": 5,
+      "pass": true,
+      "ttr_seconds": {
+        "min": 1.158816458,
+        "median": 1.313959458,
+        "max": 1.544204708
+      },
+      "target": "Raft failover ≤ 3s",
+      "target_met": true,
+      "ops": 29940,
+      "last_run_at": "2026-11-24T04:43:24Z"
+    },
+    {
+      "id": "2",
+      "scenario": "Kill follower",
+      "level": "in-process",
+      "fault": "one follower's node stops abruptly",
+      "expected": "no leader change; writes keep succeeding (majority intact); linearizable; the follower converges after restart",
+      "observed": "follower 1 killed; leader 3 unchanged; writes continued (first after the kill in 0.032 s); history of 28014 operations (2 writes with unknown outcome) is linearizable; members [1 2 3] converged: state hash 79adda54… at applied index 16793",
+      "runs": 5,
+      "expected_runs": 5,
+      "passed": 5,
+      "pass": true,
+      "ttr_seconds": {
+        "min": 0.000872084,
+        "median": 0.020718292,
+        "max": 0.032443167
+      },
+      "ops": 28014,
+      "last_run_at": "2026-11-24T04:43:34Z"
+    },
+    {
+      "id": "3",
+      "scenario": "Restart follower",
+      "level": "in-process",
+      "fault": "a follower is down while writes continue, then restarts over its own data",
+      "expected": "writes continue meanwhile; the follower catches up from the leader's log; linearizable; converged",
+      "observed": "follower 1 restarted 22912 entries behind; caught up in 0.70 s; history of 38108 operations (2 writes with unknown outcome) is linearizable; members [1 2 3] converged: state hash d1000087… at applied index 22916",
+      "runs": 5,
+      "expected_runs": 5,
+      "passed": 5,
+      "pass": true,
+      "ttr_seconds": {
+        "min": 0.001338167,
+        "median": 0.034970542,
+        "max": 0.041319667
+      },
+      "ops": 38669,
+      "last_run_at": "2026-11-24T04:43:39Z"
+    },
+    {
+      "id": "4",
+      "scenario": "Kill two nodes",
+      "level": "in-process",
+      "fault": "two of three nodes stop (quorum lost), then one restarts",
+      "expected": "no write and no linearizable read succeeds without quorum; a serializable read is still served locally; once a second node is back, writes succeed again; linearizable; converged",
+      "observed": "with nodes [2 3] down: write rejected, linearizable read rejected (coordination: cluster unavailable: connection error: desc = \"transport: Error while dialing: dial tcp 127.0.0.1:58683: connect: connection refused\"), serializable read served locally; node 2 restarted: writes succeeded 3.59 s later; history of 15038 operations (46 writes with unknown outcome) is linearizable; members [1 2 3] converged: state hash 71146d98… at applied index 8975",
+      "runs": 5,
+      "expected_runs": 5,
+      "passed": 5,
+      "pass": true,
+      "ttr_seconds": {
+        "min": 3.5328793750000003,
+        "median": 3.966554875,
+        "max": 4.174253083
+      },
+      "ops": 15038,
+      "last_run_at": "2026-11-24T04:43:51Z"
+    },
+    {
+      "id": "5",
+      "scenario": "Restore stale data dir",
+      "level": "in-process",
+      "fault": "a follower's data is replaced by an older copy of its own (taken earlier while stopped) and it restarts; the other two hold every committed entry",
+      "expected": "safety holds: no divergence, linearizable; the node rejoins behind and catches up (under the same leader, or after a leadership transfer: raft never lowers a peer's acknowledged progress)",
+      "observed": "node 1 restarted from a copy ending at index 2: caught up under the same leader; history of 47151 operations (0 writes with unknown outcome) is linearizable; members [1 2 3] converged: state hash c66079e6… at applied index 28302",
+      "runs": 5,
+      "expected_runs": 5,
+      "passed": 5,
+      "pass": true,
+      "ttr_seconds": {
+        "min": 0.001156708,
+        "median": 0.036280292,
+        "max": 0.0392215
+      },
+      "ops": 47151,
+      "last_run_at": "2026-11-24T04:43:56Z"
+    },
+    {
+      "id": "6",
+      "scenario": "Network delay",
+      "level": "in-process",
+      "fault": "60% of peer messages held 1–3 ticks (up to 300 ms latency spikes, below the 1 s election timeout), via transport.Fault",
+      "expected": "writes keep succeeding, slower; elections stay stable; linearizable; converged once the delay ends",
+      "observed": "under delay: first write 0.30 s after it began, sequential write latency p50 99ms / max 300ms; leader 1 → 1, 0 term change(s); history of 13798 operations (3 writes with unknown outcome) is linearizable; members [1 2 3] converged: state hash 616a71fb… at applied index 8279",
+      "runs": 5,
+      "expected_runs": 5,
+      "passed": 5,
+      "pass": true,
+      "ttr_seconds": {
+        "min": 0.000763583,
+        "median": 0.196094125,
+        "max": 0.396048542
+      },
+      "ops": 14245,
+      "last_run_at": "2026-11-24T04:44:03Z"
+    },
+    {
+      "id": "7",
+      "scenario": "Network partition 1|2",
+      "level": "in-process",
+      "fault": "the leader is cut off from both followers (transport.Fault partition)",
+      "expected": "the majority elects a leader and keeps accepting writes within 3 s; writes sent to the minority leader fail; after healing, the old leader follows and all converge; linearizable",
+      "observed": "leader 2 isolated: a write through it while it still led was not acknowledged; majority elected 1; writes succeeded 2.07 s after the cut; history of 27152 operations (6 writes with unknown outcome) is linearizable; members [1 2 3] converged: state hash e4721a64… at applied index 16277",
+      "runs": 5,
+      "expected_runs": 5,
+      "passed": 5,
+      "pass": true,
+      "ttr_seconds": {
+        "min": 2.05991275,
+        "median": 2.065004875,
+        "max": 2.068955375
+      },
+      "target": "Raft failover ≤ 3s",
+      "target_met": true,
+      "ops": 35419,
+      "last_run_at": "2026-11-24T04:44:09Z"
+    },
+    {
+      "id": "8",
+      "scenario": "Restart all nodes",
+      "level": "in-process",
+      "fault": "every node stops abruptly, then all restart over their own data",
+      "expected": "state is preserved: a value written before is read back; writes succeed again; linearizable; converged",
+      "observed": "all three restarted; writes succeeded 1.27 s after the stop; the marker written before reads back; history of 14115 operations (13 writes with unknown outcome) is linearizable; members [1 2 3] converged: state hash e4cb38d5… at applied index 8438",
+      "runs": 5,
+      "expected_runs": 5,
+      "passed": 5,
+      "pass": true,
+      "ttr_seconds": {
+        "min": 1.056098542,
+        "median": 1.276323125,
+        "max": 1.382698917
+      },
+      "ops": 14115,
+      "last_run_at": "2026-11-24T04:44:12Z"
+    },
+    {
+      "id": "9",
+      "scenario": "Writes without quorum",
+      "level": "in-process",
+      "fault": "every node is cut off from the others (three-way partition) while clients keep writing; then the partition heals",
+      "expected": "no write is acknowledged while no majority can talk; the leader steps down (CheckQuorum); after healing, writes succeed; writes that timed out are recorded as unknown (they may apply later); linearizable",
+      "observed": "three-way partition: 3 writes rejected; no node claims leadership; healed: writes succeeded 0.34 s later; history of 13823 operations (8 writes with unknown outcome) is linearizable; members [1 2 3] converged: state hash 373637e6… at applied index 8278",
+      "runs": 5,
+      "expected_runs": 5,
+      "passed": 5,
+      "pass": true,
+      "ttr_seconds": {
+        "min": 0.338187041,
+        "median": 0.738153708,
+        "max": 1.182169459
+      },
+      "ops": 14386,
+      "last_run_at": "2026-11-24T04:44:17Z"
+    },
+    {
+      "id": "10",
+      "scenario": "State-machine consistency after recovery",
+      "level": "in-process",
+      "fault": "6 s of seeded chaos (random node kills and restarts, partitions and heals) under load, then everything heals",
+      "expected": "every node reaches the same state hash at the same applied index; linearizable",
+      "observed": "chaos: [isolate 1 kill 3 isolate 3 kill 2 kill 1 isolate 3 kill 2 kill 1 isolate 3 kill 1 isolate 1 kill 3]; writes succeeded 1.37 s after everything healed; history of 26512 operations (58 writes with unknown outcome) is linearizable; members [1 2 3] converged: state hash d6c17f29… at applied index 15859",
+      "runs": 5,
+      "expected_runs": 5,
+      "passed": 5,
+      "pass": true,
+      "ttr_seconds": {
+        "min": 0.020972791,
+        "median": 0.886056334,
+        "max": 1.8173217080000001
+      },
+      "ops": 32055,
+      "last_run_at": "2026-11-24T04:44:26Z"
+    },
+    {
+      "id": "11",
+      "scenario": "Snapshot restore of a wiped node",
+      "level": "in-process",
+      "fault": "a follower's data is deleted (snapshot every 50 entries, 10 kept) and it restarts empty; leadership moves (the wipe procedure)",
+      "expected": "the node installs the leader's snapshot and catches up; state hashes equal; linearizable",
+      "observed": "node 1 wiped; after the transfer to 3 it installed a snapshot at index 351 and caught up 0.14 s after its restart; history of 678 operations (1 writes with unknown outcome) is linearizable; members [1 2 3] converged: state hash b61dedaf… at applied index 379",
+      "runs": 5,
+      "expected_runs": 5,
+      "passed": 5,
+      "pass": true,
+      "ttr_seconds": {
+        "min": 0.021034333,
+        "median": 0.022492208,
+        "max": 0.025318958
+      },
+      "ops": 745,
+      "last_run_at": "2026-11-24T04:44:27Z"
+    },
+    {
+      "id": "12",
+      "scenario": "Stale scheduler cannot act after a new epoch",
+      "level": "in-process",
+      "fault": "the leading scheduler is cut off from Raft (a paused process) while another campaigns; then it wakes and makes the decision it had pending, with its old epoch",
+      "expected": "the other scheduler takes over within the 10 s target and its epoch is fenced in Postgres; the old leader's decision fails with STALE_EPOCH and commits nothing; committed epochs never decrease; the KV history is linearizable",
+      "observed": "scheduler-a (epoch 1) cut off; scheduler-b took over at epoch 2 after 6.84 s (TTL 6s, renew 2s); a's pending decision got STALE_EPOCH; 2 decisions over 2 terms, epochs never decreased; history of 54172 operations (1 writes with unknown outcome) is linearizable; members [1 2 3] converged: state hash 81c3182e… at applied index 32503",
+      "runs": 5,
+      "expected_runs": 5,
+      "passed": 5,
+      "pass": true,
+      "ttr_seconds": {
+        "min": 6.340031917,
+        "median": 6.840017292,
+        "max": 8.000014666
+      },
+      "target": "scheduler failover ≤ 10s",
+      "target_met": true,
+      "ops": 65256,
+      "last_run_at": "2026-11-24T04:43:03Z"
+    },
+    {
+      "id": "X1",
+      "scenario": "Rolling restart under load",
+      "level": "in-process",
+      "fault": "each node in turn is killed and restarted while clients write",
+      "expected": "writes resume within the Raft failover target after each restart; no data loss; linearizable; converged",
+      "observed": "restarted nodes [1 2 3] one by one; slowest recovery 1.44 s; history of 14933 operations (37 writes with unknown outcome) is linearizable; members [1 2 3] converged: state hash 4f3d3dfc… at applied index 8916",
+      "runs": 5,
+      "expected_runs": 5,
+      "passed": 5,
+      "pass": true,
+      "ttr_seconds": {
+        "min": 1.441600833,
+        "median": 1.7596789579999998,
+        "max": 3.254360167
+      },
+      "target": "Raft failover ≤ 3s",
+      "target_met": false,
+      "ops": 51920,
+      "last_run_at": "2026-11-24T04:44:32Z"
+    },
+    {
+      "id": "X2",
+      "scenario": "Leader transfer under load",
+      "level": "in-process",
+      "fault": "leadership is transferred 5 times while clients write",
+      "expected": "each transfer completes; writes resume within the Raft failover target; linearizable; converged",
+      "observed": "5 transfers; slowest write recovery 0.12 s; history of 26656 operations (1 writes with unknown outcome) is linearizable; members [1 2 3] converged: state hash 22767a9b… at applied index 16006",
+      "runs": 5,
+      "expected_runs": 5,
+      "passed": 5,
+      "pass": true,
+      "ttr_seconds": {
+        "min": 0.10439375,
+        "median": 0.113978292,
+        "max": 0.1186285
+      },
+      "target": "Raft failover ≤ 3s",
+      "target_met": true,
+      "ops": 26656,
+      "last_run_at": "2026-11-24T04:44:35Z"
+    },
+    {
+      "id": "X3",
+      "scenario": "Clock skew",
+      "level": "in-process",
+      "fault": "Raft node 1's clock runs 2 s ahead (it stamps commands and judges lease expiry while it leads); Raft leadership moves among the nodes every 1.5 s while two schedulers (3 s lease, renewed every 1 s) keep deciding",
+      "expected": "lease timing shifts (earlier or later expiry judgments) and scheduler leadership changes at least once, but safety holds through fencing: committed decision epochs never decrease; the KV history is linearizable",
+      "observed": "node 1 at +2 s; 8 Raft leadership moves; 222 decisions committed over 3 scheduler terms, 0 rejected as STALE_EPOCH; committed epochs never decreased; history of 90909 operations (1 writes with unknown outcome) is linearizable; members [1 2 3] converged: state hash 7ac857a7… at applied index 54538",
+      "runs": 5,
+      "expected_runs": 5,
+      "passed": 5,
+      "pass": true,
+      "ops": 105521,
+      "last_run_at": "2026-11-24T04:43:17Z"
+    },
+    {
+      "id": "X4",
+      "scenario": "Slow disk",
+      "level": "in-process",
+      "fault": "every node's fsync (storage Save) delayed by 40 ms",
+      "expected": "elections stay stable or recover; writes keep succeeding, slower; linearizable; converged",
+      "observed": "40 ms fsync: writes succeeded 0.21 s after it began; leader 3 → 3, 0 term change(s); history of 14126 operations (3 writes with unknown outcome) is linearizable; members [1 2 3] converged: state hash 248c41aa… at applied index 8443",
+      "runs": 5,
+      "expected_runs": 5,
+      "passed": 5,
+      "pass": true,
+      "ttr_seconds": {
+        "min": 0.210359208,
+        "median": 0.305289625,
+        "max": 0.37756325
+      },
+      "ops": 14126,
+      "last_run_at": "2026-11-24T04:44:42Z"
+    },
+    {
+      "id": "X5",
+      "scenario": "Large snapshot install under load",
+      "level": "in-process",
+      "fault": "about 12 MiB of state (1,500 × 8 KiB values), then a follower is wiped and catches up through a multi-chunk snapshot while clients write",
+      "expected": "the snapshot installs (1 MiB chunks) without stalling writes; state hashes equal; linearizable",
+      "observed": "about 12 MiB of state; wiped node 1 installed snapshot at index 1801 and caught up 0.18 s after its restart, while writes continued; history of 885 operations (3 writes with unknown outcome) is linearizable; members [1 2 3] converged: state hash e4b68964… at applied index 2004",
+      "runs": 5,
+      "expected_runs": 5,
+      "passed": 5,
+      "pass": true,
+      "ttr_seconds": {
+        "min": 0.000457458,
+        "median": 0.000578292,
+        "max": 0.000712667
+      },
+      "ops": 885,
+      "last_run_at": "2026-11-24T04:44:44Z"
+    },
+    {
+      "id": "N",
+      "scenario": "Negative control: stale read reported as linearizable",
+      "level": "in-process",
+      "fault": "a deliberately broken client: after v2 is acknowledged, it reads the key from a partitioned follower with SERIALIZABLE consistency and records it as a linearizable read",
+      "expected": "Porcupine flags the history as not linearizable (the checker works)",
+      "observed": "stale read of v1 after v2 was acknowledged: Porcupine judged the history Illegal",
+      "runs": 5,
+      "expected_runs": 5,
+      "passed": 5,
+      "pass": true,
+      "ops": 3,
+      "last_run_at": "2026-11-24T04:44:45Z"
+    },
+    {
+      "id": "C1",
+      "scenario": "Kill leader (container)",
+      "level": "container",
+      "fault": "docker compose kill (SIGKILL) of the leader's container",
+      "expected": "writes through the other two succeed within 3 s; linearizable; converged after the container restarts",
+      "observed": "raft-3 killed; raft-2 leads; writes succeeded 1.16 s after the kill; history of 7654 operations (15 writes with unknown outcome) is linearizable; raft-1..3 converged: state hash 37194575… at applied index 65871",
+      "runs": 5,
+      "expected_runs": 5,
+      "passed": 5,
+      "pass": true,
+      "ttr_seconds": {
+        "min": 1.161939208,
+        "median": 1.578657583,
+        "max": 1.858663875
+      },
+      "target": "Raft failover ≤ 3s",
+      "target_met": true,
+      "ops": 7727,
+      "last_run_at": "2026-11-24T04:42:29Z"
+    },
+    {
+      "id": "C2",
+      "scenario": "Pause leader (container)",
+      "level": "container",
+      "fault": "docker pause (SIGSTOP) of the leader's container for 5 s",
+      "expected": "the other two elect a leader and writes succeed within 3 s; the resumed old leader follows; linearizable; converged",
+      "observed": "raft-2 paused; writes succeeded 1.42 s later; after resuming, raft-3 leads; history of 2214 operations (5 writes with unknown outcome) is linearizable; raft-1..3 converged: state hash 04249f17… at applied index 67159",
+      "runs": 5,
+      "expected_runs": 5,
+      "passed": 5,
+      "pass": true,
+      "ttr_seconds": {
+        "min": 1.161770166,
+        "median": 1.556640417,
+        "max": 1.96729975
+      },
+      "target": "Raft failover ≤ 3s",
+      "target_met": true,
+      "ops": 2226,
+      "last_run_at": "2026-11-24T04:42:37Z"
+    },
+    {
+      "id": "C7",
+      "scenario": "Network partition 1|2 (container)",
+      "level": "container",
+      "fault": "docker network disconnect of the leader's container from the Compose network for 5 s",
+      "expected": "the majority elects a leader and writes succeed within 3 s; after reconnecting, the old leader follows; linearizable; converged",
+      "observed": "raft-3 disconnected; writes succeeded 1.65 s later; reconnected, raft-1 leads; history of 2307 operations (5 writes with unknown outcome) is linearizable; raft-1..3 converged: state hash 9ea36cd7… at applied index 68503",
+      "runs": 5,
+      "expected_runs": 5,
+      "passed": 5,
+      "pass": true,
+      "ttr_seconds": {
+        "min": 1.317820792,
+        "median": 1.5388756670000001,
+        "max": 2.034503583
+      },
+      "target": "Raft failover ≤ 3s",
+      "target_met": true,
+      "ops": 2501,
+      "last_run_at": "2026-11-24T04:42:48Z"
+    },
+    {
+      "id": "C8",
+      "scenario": "Restart all nodes (container)",
+      "level": "container",
+      "fault": "docker compose restart of raft-1..3 (volumes kept)",
+      "expected": "state is preserved: a value written before reads back; writes succeed again; linearizable; converged",
+      "observed": "raft-1..3 restarted; writes succeeded 3.36 s after the restart began; the marker reads back; history of 2344 operations (4 writes with unknown outcome) is linearizable; raft-1..3 converged: state hash ca12d1c3… at applied index 69862",
+      "runs": 5,
+      "expected_runs": 5,
+      "passed": 5,
+      "pass": true,
+      "ttr_seconds": {
+        "min": 1.5427849999999999,
+        "median": 3.3627325,
+        "max": 3.392600375
+      },
+      "ops": 2344,
+      "last_run_at": "2026-11-24T04:42:55Z"
+    }
+  ]
+}
