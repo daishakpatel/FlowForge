@@ -44,3 +44,4 @@ The one place agents record the versions they choose (`00C` §2.6, §10.3). Add 
 | `golang.org/x/text` | v0.43.0 | 2026-11-24 | 05.01 | BSD-3-Clause. Was indirect; now direct: `message.Printer` renders jsonschema violation messages in `pkg/events`. |
 | `github.com/testcontainers/testcontainers-go` | v0.45.0 | 2026-11-24 | 05.01 | Was indirect; now direct: `kafkatest` starts the Kafka container with the generic API (the `modules/kafka` module supports only Confluent's image, so it is not used). |
 | Image `apache/kafka` | `4.1.1` | 2026-11-24 | 05.01 | Apache-2.0. Compose `kafka` (KRaft, single broker) and `internal/kafka/kafkatest` (`Image`); keep both in step. |
+| `github.com/shopspring/decimal` | v1.5.0 | 2026-11-24 | 05.02 | MIT. Exact decimal prices in `internal/stream/domain` (00A amendment 05.02). Was already in `go.sum` as an indirect dependency at this version; now direct, not upgraded. |

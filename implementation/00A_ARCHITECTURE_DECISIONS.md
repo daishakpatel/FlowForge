@@ -390,3 +390,14 @@ Format: Context → Decision → Alternatives considered → Consequences.
   - **Test broker:** `internal/kafka/kafkatest` runs the `apache/kafka` image as a generic testcontainer, because the testcontainers Kafka module runs only Confluent's image. Lint lifts the env rule for it, as for `internal/testutil`.
 - **Why:** keep one envelope contract and one envelope type; give 05.08 its dead-letter topic; keep the test broker the same image as Compose.
 - **Impact:** additive. No JSON, topic or env var changes for existing producers; two call sites convert `statemachine.EventType` to `string`. Dev uses `localhost:19092` from the host (the `FF_KAFKA_BROKERS` default stays `localhost:9092`).
+
+### ADR-011 amendment — 05.02 — 2026-11-24
+- **What:** the market-data contract in 00E §12 changes, before any table existed. **Approved by the human** in the 05.02 session (00C §2.4: a contract change), choosing the phase-05 task files over the previous 00E text:
+  - **Tables** are `market_ticks`, `market_aggregates`, `market_ingest_state` and `market_replay_jobs` (were `market_ohlcv` and `ingest_watermarks`; no replay table). `market_ticks` gains `late`, `market_aggregates` gains `status` and `version`.
+  - **Prices are exact decimals:** `numeric` columns and `shopspring/decimal` in Go (was `double precision`). Only statistics of log returns (volatility, z-score) are `double precision`.
+  - **Indicator defaults:** anomaly n = 20, k = 3, at least 10 samples, sample std-dev (was |z| > 4); volatility uses the sample std-dev (was population). The moving average stays the mean of the last 5 closes.
+  - **Too-late events** go to the DLQ with reason `too_late` (was `late`, in ADR-011 and FR-KAFKA-09).
+  - **Lateness is judged in event time only:** `Classify(windowEnd, watermark, maxLateness)` takes no wall-clock time, so replays classify as the live run did.
+  - **Purity is lint-enforced:** depguard `stream-domain-pure` keeps net, os, randomness and every FlowForge package out of `internal/stream/domain`.
+- **Why:** every phase-05 task file (05.02–05.10) is written against these names; exact prices avoid float rounding in stored OHLCV.
+- **Impact:** no data or code depended on the old names. The future-timestamp bound stays 00E §7's 5 s (the task file says 5 min).

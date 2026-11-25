@@ -60,7 +60,7 @@ Rules:
 - **Services never migrate themselves.** From task 02.04, `flowforge-api` compares `migrate.Version` with `migrate.Latest` at startup and refuses to start on an older schema.
 - **Concurrent runs are safe.** `Up` takes a Postgres advisory lock (polled every second, for up to 5 minutes), so several migrators can start at once and run one after another.
 - **Running twice is a no-op**; goose records applied versions in `goose_db_version`.
-- **The marketdata set is empty** until task 05.03. `Up` on it only checks the connection.
+- **The marketdata set** (`migrations/marketdata`, task 05.02) creates the TimescaleDB tick store and aggregates: `market_ticks` and `market_aggregates` (hypertables), `market_ingest_state`, `market_replay_jobs`, and the tick compression (2 days) and retention (14 days) policies. Its tables, formulas and dedupe rule are in `00E` §12 and [`market-data-math.md`](market-data-math.md).
 
 ## Adding a migration
 

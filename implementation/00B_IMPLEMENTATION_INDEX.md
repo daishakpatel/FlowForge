@@ -522,7 +522,7 @@ Tick when the task's completion report exists and all acceptance criteria are me
 **Phase 05 — Kafka Streaming and Market-Data Workload**
 
 - [x] `05.01` Kafka (KRaft) infrastructure, topic bootstrap, event envelope and JSON Schemas — `phase-05-kafka-marketdata/05.01_kafka_infra_topics_envelope.md`
-- [ ] `05.02` Market-data domain library and TimescaleDB schema (windows, indicators, anomaly math) — `phase-05-kafka-marketdata/05.02_marketdata_domain_timescale.md`
+- [x] `05.02` Market-data domain library and TimescaleDB schema (windows, indicators, anomaly math) — `phase-05-kafka-marketdata/05.02_marketdata_domain_timescale.md`
 - [ ] `05.03` Deterministic tick generator, historical loader and Kafka producer — `phase-05-kafka-marketdata/05.03_tick_generator_loader_producer.md`
 - [ ] `05.04` Stream processor: consume, validate/normalize, DLQ, persisted dedupe — `phase-05-kafka-marketdata/05.04_processor_consume_validate_persist.md`
 - [ ] `05.05` Event-time windowed aggregation with late-data recompute and idempotent upserts — `phase-05-kafka-marketdata/05.05_windowed_aggregation_recompute.md`

@@ -434,35 +434,58 @@ Logs: JSON, fields `ts, level, msg, service, version, request_id, run_id, task_i
 
 ## 12. Market data DDL (database `marketdata`, migrations `migrations/marketdata/`)
 
+The migrations are the source of truth (task 05.02; 00A amendment "ADR-011 amendment — 05.02"). Prices, sizes and derived prices are `numeric`, never floating point; only statistics of log returns are `double precision`.
+
 ```sql
-CREATE EXTENSION IF NOT EXISTS timescaledb;
-CREATE TABLE market_ticks (
-  event_time timestamptz NOT NULL, symbol text NOT NULL, event_id text NOT NULL,
-  price double precision NOT NULL, size double precision NOT NULL, source text NOT NULL,
-  sequence bigint, ingested_at timestamptz NOT NULL, kafka_partition int, kafka_offset bigint,
+CREATE TABLE market_ticks (                         -- 0001; hypertable on event_time, 1-day chunks
+  event_time timestamptz NOT NULL, symbol text NOT NULL CHECK (symbol ~ '^[A-Z]{1,6}(\.[A-Z])?$'),
+  event_id text NOT NULL, price numeric NOT NULL CHECK (price > 0), size numeric NOT NULL CHECK (size >= 0),
+  source text NOT NULL, sequence bigint, ingested_at timestamptz NOT NULL, kafka_partition integer,
+  kafka_offset bigint, late boolean NOT NULL DEFAULT false,
   PRIMARY KEY (event_id, event_time)               -- hypertable requires partition col in unique keys
 );
-SELECT create_hypertable('market_ticks','event_time', chunk_time_interval => interval '1 day');
-CREATE INDEX ix_ticks_symbol_time ON market_ticks(symbol, event_time DESC);
--- Dedupe note: event_id embeds event_time determinism for synthetic data; processor uses
--- INSERT … ON CONFLICT (event_id, event_time) DO NOTHING and counts RowsAffected()==0 as duplicate.
+CREATE INDEX ix_ticks_symbol_time ON market_ticks (symbol, event_time DESC);
+-- Dedupe: INSERT … ON CONFLICT (event_id, event_time) DO NOTHING; RowsAffected()==0 counts a duplicate.
+-- The same event_id with a different event_time is a distinct row (a producer bug 05.09 reports).
 
-CREATE TABLE market_ohlcv (
+CREATE TABLE market_aggregates (                    -- 0002; hypertable on window_start, 7-day chunks
   symbol text NOT NULL, window_size text NOT NULL CHECK (window_size IN ('1m','5m')),
-  window_start timestamptz NOT NULL, open double precision, high double precision, low double precision,
-  close double precision, volume double precision, vwap double precision, event_count integer NOT NULL,
-  moving_avg double precision, volatility double precision, anomaly boolean NOT NULL DEFAULT false,
-  input_hash text NOT NULL, last_updated_at timestamptz NOT NULL DEFAULT now(),
+  window_start timestamptz NOT NULL, open numeric NOT NULL, high numeric NOT NULL, low numeric NOT NULL,
+  close numeric NOT NULL, volume numeric NOT NULL CHECK (volume >= 0), vwap numeric NOT NULL,
+  event_count integer NOT NULL CHECK (event_count > 0), moving_avg numeric, volatility double precision,
+  anomaly boolean NOT NULL DEFAULT false, status text NOT NULL DEFAULT 'open' CHECK (status IN ('open','final')),
+  version bigint NOT NULL DEFAULT 1, input_hash text NOT NULL, last_updated_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (symbol, window_size, window_start)
 );
-SELECT create_hypertable('market_ohlcv','window_start', chunk_time_interval => interval '7 days');
 
-CREATE TABLE ingest_watermarks (
-  symbol text NOT NULL, partition int NOT NULL, max_event_time timestamptz NOT NULL,
-  updated_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (symbol, partition)
+-- Empty windows are never upserted (event_count > 0); domain.Aggregate returns Count 0 for them.
+
+CREATE TABLE market_ingest_state (                  -- 0003; per consumer group and partition, informational
+  consumer_group text NOT NULL, topic text NOT NULL, partition integer NOT NULL CHECK (partition >= 0),
+  last_offset bigint NOT NULL CHECK (last_offset >= 0), max_event_time timestamptz,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (consumer_group, topic, partition)
 );
+CREATE TABLE market_replay_jobs (                   -- 0003; bounded replays (05.07); id = idempotency key
+  id text PRIMARY KEY, mode text NOT NULL CHECK (mode IN ('offset','timestamp','time_range')),
+  spec jsonb NOT NULL,
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','running','succeeded','failed','cancelled')),
+  progress jsonb NOT NULL DEFAULT '{}',
+  events_read bigint NOT NULL DEFAULT 0 CHECK (events_read >= 0),
+  events_written bigint NOT NULL DEFAULT 0 CHECK (events_written >= 0),
+  error text, created_at timestamptz NOT NULL DEFAULT now(), started_at timestamptz,
+  finished_at timestamptz, updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX ix_replay_jobs_active ON market_replay_jobs (created_at) WHERE status IN ('pending','running');
+-- 0004: market_ticks compression after 2 days (segment by symbol) and retention of 14 days.
 ```
-Formulas: VWAP = Σ(price·size)/Σsize; moving average = mean of last 5 closes of the same window size; volatility = population std-dev of log returns of last 20 closes (null if < 3); anomaly = |z-score(close vs last 20 closes)| > 4 (configurable).
+Formulas (`internal/stream/domain`, worked examples in `docs/architecture/market-data-math.md`):
+
+- **VWAP** = Σ(price·size)/Σsize, rounded to 8 places; the close when Σsize = 0.
+- **Moving average** = mean of the last 5 closes of the same window size (8 places).
+- **Volatility** = sample std-dev (divisor m − 1) of the m = n − 1 log returns of the last n = 20 closes; null below 3 closes.
+- **Anomaly** = |z| > k with z = (close − mean)/s over the previous n closes: defaults n = 20, k = 3, at least 10 samples (never flagged below).
+- **Lateness** (FR-KAFKA-09): watermark = max(event_time) − 30 s. A window ending after it is on time; one that ended at most 10 min (`FF_STREAM_MAX_LATENESS`, 05.04) before it is recomputed. Older: not stored, DLQ reason `too_late`.
 
 ## 13. AI database (`aiops`)
 `kb_documents(doc_id pk, title, source_path, version, content_hash, scope, tags text[], updated_at)`, `kb_chunks(chunk_id pk, doc_id fk, section, chunk_idx, content, embedding vector(<dim>), metadata jsonb)` with HNSW index; `investigations(id pk, request jsonb, status, result jsonb, evidence jsonb, created_at, completed_at)`; embedding dimension is config (`AI_EMBED_DIM`, default 384 for the deterministic local embedder).

@@ -186,7 +186,7 @@ Compose services: `postgres` (pgvector), `timescaledb`, `kafka` (KRaft single br
 |---|---|---|---|
 | `flowforge` | `postgres` | Workflow/task/attempt state, events, outbox, approvals, task logs, API keys, audit, cron | goose migrations, pgx v5 + sqlc |
 | `aiops` | `postgres` | KB documents/chunks (pgvector), investigation records, LangGraph checkpoints (if used) | Alembic |
-| `marketdata` | `timescaledb` | `market_ticks`, `market_ohlcv`, `ingest_watermarks` | goose (separate dir) |
+| `marketdata` | `timescaledb` | `market_ticks`, `market_aggregates`, `market_ingest_state`, `market_replay_jobs` | goose (separate dir) |
 
 Canonical DDL, enums, indexes, and state-transition tables are in `00E_CONTRACTS_REFERENCE.md`. No task may change an enum value or table name defined there without updating `00E` and recording a deviation.
 
@@ -265,7 +265,7 @@ Canonical DDL, enums, indexes, and state-transition tables are in `00E_CONTRACTS
 | FR-KAFKA-06 | Processor validates/normalizes; invalid events → `market.invalid` DLQ with reason; poison events never block a partition. | E | DLQ test with malformed payloads. |
 | FR-KAFKA-07 | Persisted dedupe via unique `event_id` in `market_ticks` (`ON CONFLICT DO NOTHING`); duplicates counted. | E+A | Replay of same data → identical aggregates, N dup metric. |
 | FR-KAFKA-08 | Event-time tumbling windows 1 m and 5 m: OHLCV, VWAP, event count; moving average and rolling volatility (documented formulas); anomaly flag (z-score > configurable). | E | Golden-file aggregate tests. |
-| FR-KAFKA-09 | Late/out-of-order policy: watermark = max(event_time) − allowed_lateness (default 30 s); late-but-within-bound events trigger window recompute; beyond-bound events → `market.late` counter + DLQ(reason=late). | E+A | Policy test matrix. |
+| FR-KAFKA-09 | Late/out-of-order policy: watermark = max(event_time) − allowed_lateness (default 30 s); late-but-within-bound events trigger window recompute; beyond-bound events → `market.late` counter + DLQ(reason=too_late). | E+A | Policy test matrix. |
 | FR-KAFKA-10 | Aggregate upsert keyed `(symbol, window_size, window_start)`, recompute-from-ticks so replays never regress data; `last_updated_at`, `input_hash` stored. | E | Replay overlapping live → final state equals single clean pass. |
 | FR-KAFKA-11 | Backpressure: bounded channels, bounded batch, max in-flight, consumer pause/resume, bounded DB write concurrency; no unbounded buffers. | E | Slow-DB test: RSS growth bounded, lag grows, no OOM. |
 | FR-KAFKA-12 | Offsets committed only after durable DB commit; graceful shutdown drains and commits; rebalance-safe. | E | Kill -9 mid-batch → no loss, duplicates deduped. |
