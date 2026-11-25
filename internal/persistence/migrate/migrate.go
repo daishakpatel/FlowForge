@@ -28,8 +28,8 @@ type MigrationStatus struct {
 }
 
 // Up applies every pending migration of set to the database at dsn and returns the resulting
-// schema version. Running it again is a no-op. An empty set (marketdata before task 05.03)
-// only checks the connection and returns 0.
+// schema version. Running it again is a no-op. An empty set only checks the connection and
+// returns 0.
 func Up(ctx context.Context, dsn string, set Set) (int64, error) {
 	var version int64
 	err := withProvider(ctx, dsn, set, func(p *goose.Provider) error {

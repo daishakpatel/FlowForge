@@ -57,8 +57,8 @@ func TestLatest(t *testing.T) {
 	if v, err := migrate.Latest(migrate.Flowforge); err != nil || v != 4 {
 		t.Errorf("Latest(flowforge) = %d, %v; want 4", v, err)
 	}
-	if v, err := migrate.Latest(migrate.Marketdata); err != nil || v != 0 {
-		t.Errorf("Latest(marketdata) = %d, %v; want 0 until 05.03", v, err)
+	if v, err := migrate.Latest(migrate.Marketdata); err != nil || v != 4 {
+		t.Errorf("Latest(marketdata) = %d, %v; want 4 (05.02)", v, err)
 	}
 }
 

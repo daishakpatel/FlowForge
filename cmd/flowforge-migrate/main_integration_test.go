@@ -27,8 +27,8 @@ func TestRun_UpAndStatus(t *testing.T) {
 		{[]string{"--db", "flowforge", "up"}, []string{"flowforge: schema at version 4"}},
 		{[]string{"up"}, []string{"flowforge: schema at version 4"}}, // default --db, second run is a no-op
 		{[]string{"--db", "flowforge", "status"}, []string{"VERSION", "applied", "0004_triggers_approvals.sql"}},
-		{[]string{"--db", "marketdata", "up"}, []string{"marketdata: schema at version 0"}},
-		{[]string{"--db", "marketdata", "status"}, []string{"marketdata: no migrations"}},
+		{[]string{"--db", "marketdata", "up"}, []string{"marketdata: schema at version 4"}}, // 05.02's four migrations
+		{[]string{"--db", "marketdata", "status"}, []string{"0001_ticks.sql", "0004_policies.sql", "applied"}},
 	} {
 		var stdout, stderr bytes.Buffer
 		if err := run(t.Context(), tc.args, opts, &stdout, &stderr); err != nil {

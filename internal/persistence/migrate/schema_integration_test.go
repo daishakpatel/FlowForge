@@ -139,17 +139,31 @@ func TestUp_UnreachableDatabase(t *testing.T) {
 	}
 }
 
-func TestUp_MarketdataEmptySet(t *testing.T) {
+// TestUp_MarketdataFromEmptyIsIdempotent: the marketdata set (05.02) applies to an empty
+// TimescaleDB database, and a second run changes nothing. Until 05.02 the set was empty.
+func TestUp_MarketdataFromEmptyIsIdempotent(t *testing.T) {
 	db := testutil.NewTimescale(t)
 	ctx := t.Context()
-	if v, err := migrate.Up(ctx, db.DSN, migrate.Marketdata); err != nil || v != 0 {
-		t.Errorf("Up = %d, %v; want 0, nil", v, err)
+	for run := 1; run <= 2; run++ {
+		if v, err := migrate.Up(ctx, db.DSN, migrate.Marketdata); err != nil || v != 4 {
+			t.Fatalf("Up #%d = %d, %v; want 4", run, v, err)
+		}
 	}
-	if st, err := migrate.Status(ctx, db.DSN, migrate.Marketdata); err != nil || len(st) != 0 {
-		t.Errorf("Status = %v, %v; want empty", st, err)
+	st, err := migrate.Status(ctx, db.DSN, migrate.Marketdata)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if v, err := migrate.Version(ctx, db.DSN, migrate.Marketdata); err != nil || v != 0 {
-		t.Errorf("Version = %d, %v; want 0", v, err)
+	want := []string{"0001_ticks.sql", "0002_aggregates.sql", "0003_state_replay.sql", "0004_policies.sql"}
+	if len(st) != len(want) {
+		t.Fatalf("Status has %d entries, want %d", len(st), len(want))
+	}
+	for i, m := range st {
+		if m.Name != want[i] || m.Version != int64(i+1) || !m.Applied {
+			t.Errorf("status[%d] = %+v", i, m)
+		}
+	}
+	if v, err := migrate.Version(ctx, db.DSN, migrate.Marketdata); err != nil || v != 4 {
+		t.Errorf("Version = %d, %v; want 4", v, err)
 	}
 }
 
