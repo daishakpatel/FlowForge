@@ -38,3 +38,9 @@ The one place agents record the versions they choose (`00C` §2.6, §10.3). Add 
 | Image `gcr.io/distroless/static-debian12` | nonroot | 2026-11-22 | 04.06 | Runtime stage of `Dockerfile.raft`: static binary, uid 65532, no shell. Digest pinning is 09.02. |
 | Image `curlimages/curl` | 8.11.1 | 2026-11-22 | 04.07 | Compose `worker-bootstrap` only (dev): creates the workers' API key. `Dockerfile.service` reuses the two images above. |
 | `go.etcd.io/bbolt` | v1.5.0 | 2026-11-19 | 04.01 | MIT. Durable Raft storage (`internal/raftkv/storage.Bolt`); opened with `NoSync: false`, so every commit fsyncs. |
+| `github.com/twmb/franz-go` | v1.22.3 | 2026-11-24 | 05.01 | BSD-3-Clause. Kafka client (`internal/kafka`), approved stack (ADR-010). Pulls `pkg/kmsg` v1.15.1 and `pierrec/lz4/v4` v4.1.33 (BSD-3-Clause); raised indirect `klauspost/compress` from v1.20.1 to v1.20.3. |
+| `github.com/twmb/franz-go/pkg/kadm` | v1.20.0 | 2026-11-24 | 05.01 | BSD-3-Clause. Kafka admin client: topic bootstrap (`kafka.EnsureTopics`) and `kafkatest`. |
+| `github.com/santhosh-tekuri/jsonschema/v6` | v6.0.3 | 2026-11-24 | 05.01 | Apache-2.0. Was indirect (kin-openapi, 02.04); now direct: `pkg/events.Registry` validates the event schemas (draft 2020-12). |
+| `golang.org/x/text` | v0.43.0 | 2026-11-24 | 05.01 | BSD-3-Clause. Was indirect; now direct: `message.Printer` renders jsonschema violation messages in `pkg/events`. |
+| `github.com/testcontainers/testcontainers-go` | v0.45.0 | 2026-11-24 | 05.01 | Was indirect; now direct: `kafkatest` starts the Kafka container with the generic API (the `modules/kafka` module supports only Confluent's image, so it is not used). |
+| Image `apache/kafka` | `4.1.1` | 2026-11-24 | 05.01 | Apache-2.0. Compose `kafka` (KRaft, single broker) and `internal/kafka/kafkatest` (`Image`); keep both in step. |

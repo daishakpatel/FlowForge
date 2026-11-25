@@ -379,3 +379,14 @@ Format: Context → Decision → Alternatives considered → Consequences.
 - **Impact:**
   - **No production code or contract changes.** The `kvtest` additions are opt-in, and existing users are unchanged.
   - **No Toxiproxy service** in Compose; ADR-019's "Toxiproxy" remains an option for later latency work at container level.
+
+### ADR-010 amendment — 05.01 — 2026-11-24
+- **What:**
+  - **The envelope stays the 00E §7 shape** (`event_id`, `event_type`, `event_version`, `occurred_at`, `producer`, `correlation_id`, `aggregate_id`, `trace`, `payload`), which the outbox has produced since 03.07. Task 05.01 §4 cites an "00E §7.2" shape (`schema`, `schema_version`, `data`, …) that 00E does not define; 00E wins (00C §2.12).
+  - **The Go envelope type moves to `pkg/events.Envelope[T]`**, beside the schema validator; `internal/events.Envelope` becomes an alias of `Envelope[json.RawMessage]`. The JSON is unchanged.
+  - **Schema names** follow 00E's form (`envelope.v1`, `market_tick.v1`): `flowforge_event.v1`, `market_aggregate.v1`, `market_invalid.v1`, and payload schemas `workflow_*.v1`. Compatibility is enforced by a test against `schemas/baseline/`.
+  - **New topic `flowforge.dlq`** (3 partitions, 14 d), which 05.08 needs; `market.aggregates` gets `cleanup.policy=compact,delete`. Both are in 00E §7.
+  - **New config** `FF_KAFKA_CLIENT_ID` and the placeholder `FF_KAFKA_SECURITY_PROTOCOL` (only `PLAINTEXT` until 09.01) in `config.Kafka` (00E §6).
+  - **Test broker:** `internal/kafka/kafkatest` runs the `apache/kafka` image as a generic testcontainer, because the testcontainers Kafka module runs only Confluent's image. Lint lifts the env rule for it, as for `internal/testutil`.
+- **Why:** keep one envelope contract and one envelope type; give 05.08 its dead-letter topic; keep the test broker the same image as Compose.
+- **Impact:** additive. No JSON, topic or env var changes for existing producers; two call sites convert `statemachine.EventType` to `string`. Dev uses `localhost:19092` from the host (the `FF_KAFKA_BROKERS` default stays `localhost:9092`).

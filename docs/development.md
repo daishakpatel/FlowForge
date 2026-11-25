@@ -27,7 +27,8 @@ make test-fault-raft   # the Raft fault suite, 5 runs, renders docs/testing/raft
 make lint-selftest     # prove the package-boundary lint rules still fire
 make cover-check       # 70 % coverage gate on the gated packages that exist
 
-make dev-up            # start postgres + timescaledb and wait until healthy
+make dev-up            # start postgres, timescaledb and kafka and wait until healthy (PROFILE=streaming: timescaledb + kafka)
+make topics           # create the Kafka topics (deploy/kafka/topics.yaml); safe to rerun
 make dev-down          # stop them; data is kept in Docker volumes
 make dev-reset         # delete the volumes and start fresh (re-runs the init SQL)
 make psql              # psql into flowforge as the flowforge role
@@ -44,6 +45,8 @@ make logs              # follow the stack's logs
 | `postgres` | `pgvector/pgvector:0.8.7-pg16` | `5432` (`FF_DEV_PG_PORT`) | `flowforge`, `aiops` | `flowforge`/`flowforge` owns `flowforge`; `aiops`/`aiops` owns `aiops`; admin `postgres`/`postgres` | `vector` in `aiops` |
 | `timescaledb` | `timescale/timescaledb:2.31.0-pg16` | `5433` (`FF_DEV_MD_PORT`) | `marketdata` | `md`/`md` (admin) | `timescaledb` |
 
+Kafka runs beside them (`apache/kafka:4.1.1`, single broker in KRaft mode, profile `streaming`): `localhost:19092` from the host (`FF_DEV_KAFKA_PORT`), `kafka:9092` inside Compose, no credentials. Create its topics with `make topics`; the topics, envelope and client are in [`architecture/event-schemas.md`](architecture/event-schemas.md).
+
 The connection strings the services use are in [`.env.example`](../.env.example) and `00E` §6; how services load them is in [`configuration.md`](configuration.md). After `make dev-up`, run `make migrate-up` to create the `flowforge` schema; the schema and migration rules are in [`architecture/database.md`](architecture/database.md). The `postgres` server's roles and databases come from `deploy/docker/postgres-init/`, which runs only when the volume is first created.
 
 ### Compose profiles
@@ -51,14 +54,14 @@ The connection strings the services use are in [`.env.example`](../.env.example)
 | Profile | Services today | Planned additions |
 |---|---|---|
 | `core` | `postgres` | API, scheduler, worker on their own (09.02) |
-| `streaming` | `timescaledb` | Kafka (05.01), market-data processor (05.x) |
+| `streaming` | `timescaledb`, `kafka` (05.01) | market-data processor (05.x) |
 | `raft` | `raft-1..3` (04.06); `postgres`, `flowforge-migrate`, `flowforge-api`, `scheduler-1..3`, `worker-bootstrap`, `worker-1..2`: the control plane on Raft (04.07, `make failover-up` = `--profile core --profile raft`) | — |
 | `ai` | `postgres` (hosts `aiops`) | AI service (06.01) |
 | `ui` | none yet | dashboard (07.01) |
 | `obs` | none yet | Prometheus, Grafana, OTel Collector, Jaeger (08.x) |
-| `full` | `postgres`, `timescaledb`, `raft-1..3`, the control plane on Raft | everything |
+| `full` | `postgres`, `timescaledb`, `kafka`, `raft-1..3`, the control plane on Raft | everything |
 
-The `make dev-*` targets use `core` and `streaming`. For another combination, call Compose directly, for example `docker compose --profile full up -d --wait`.
+The `make dev-*` targets use `core` and `streaming`; `PROFILE` picks others (`make dev-up PROFILE=streaming`). For another combination, call Compose directly, for example `docker compose --profile full up -d --wait`.
 
 ## Integration tests
 
