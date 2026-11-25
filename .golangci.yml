@@ -113,6 +113,10 @@ linters:
       - path: (^|/)test/e2e/
         linters:
           - forbidigo
+      # test/fault injects and measures faults in real time and reads its FF_FAULT_* knobs (04.08).
+      - path: (^|/)test/fault/
+        linters:
+          - forbidigo
       # internal/clock wraps the time package; only the time rule is lifted, the env ban still applies.
       - path: (^|/)internal/clock/
         text: time\.
