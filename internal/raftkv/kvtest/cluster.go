@@ -7,6 +7,11 @@
 // A member's address is its peer and client address. Kill stops a member abruptly (as a crashed
 // process: in-flight RPCs fail); Start brings it back over the same storage, so it rejoins with
 // its log.
+//
+// For fault injection (task 04.08) a cluster can also wrap every member's peer transport in a
+// transport.Fault (Options.Faults: Partition, Heal, SetFaults), give members their own clocks
+// (Options.MemberClock), wrap their storage (Options.WrapStorage), and copy and restore a stopped
+// member's storage (Backup, Restore) as a copy of its data directory would.
 package kvtest
 
 import (
@@ -14,12 +19,16 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"go.etcd.io/raft/v3"
+	raftpb "go.etcd.io/raft/v3/raftpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -50,6 +59,16 @@ type Options struct {
 	// AdminToken enables the Admin service (04.06); empty disables it.
 	AdminToken string
 	Logger     *slog.Logger // default: discard
+
+	// Faults wraps every member's peer transport in a transport.Fault seeded from FaultSeed,
+	// driven by Partition, Heal and SetFaults; held messages are released every TickInterval.
+	Faults    bool
+	FaultSeed int64
+	// MemberClock, when set and non-nil for a member, is that member's clock instead of Clock
+	// (clock-skew tests: it stamps commands and judges lease expiry).
+	MemberClock func(id uint64) clock.Clock
+	// WrapStorage, when set, wraps a member's storage on every start (for example a slow disk).
+	WrapStorage func(id uint64, st storage.Storage) storage.Storage
 }
 
 // ClusterID is the raft cluster id every kvtest member uses.
@@ -75,6 +94,30 @@ type member struct {
 	cancel  context.CancelFunc
 	swept   chan struct{}
 	running bool
+
+	// fault, with Options.Faults, sits between the node and its transport for the cluster's
+	// lifetime; it forwards to whichever transport and node the member currently runs.
+	fault  *transport.Fault
+	curTr  atomic.Pointer[transport.GRPC]
+	curNod atomic.Pointer[node.Node]
+}
+
+// Send forwards the fault's output to the member's current transport (none while it is down).
+func (m *member) Send(msgs []*raftpb.Message) {
+	if tr := m.curTr.Load(); tr != nil {
+		tr.Send(msgs)
+	}
+}
+
+// dropped reports a snapshot the fault dropped, so the sending node stops waiting for it; other
+// dropped messages are plain losses raft recovers from.
+func (m *member) dropped(msg *raftpb.Message) {
+	if msg.GetType() != raftpb.MessageType_MsgSnap {
+		return
+	}
+	if n := m.curNod.Load(); n != nil {
+		n.ReportSnapshot(msg.GetTo(), raft.SnapshotFailure)
+	}
 }
 
 // Cluster is an in-process cluster. Its methods are safe for concurrent use.
@@ -82,6 +125,9 @@ type Cluster struct {
 	t     testing.TB
 	opts  Options
 	peers []node.Peer
+
+	stopTicks context.CancelFunc // with Options.Faults: stops the fault ticker
+	ticked    chan struct{}
 
 	mu      sync.Mutex
 	members map[uint64]*member
@@ -113,13 +159,140 @@ func New(t testing.TB, opts Options) *Cluster {
 		}
 		id := uint64(i)
 		c.peers = append(c.peers, node.Peer{ID: id, Addr: lis.Addr().String()})
-		c.members[id] = &member{Member: Member{ID: id, Addr: lis.Addr().String()}, st: storage.NewMem(), lis: lis}
+		m := &member{Member: Member{ID: id, Addr: lis.Addr().String()}, st: storage.NewMem(), lis: lis}
+		if opts.Faults {
+			m.fault = transport.NewFault(m, opts.FaultSeed+int64(id), m.dropped) //nolint:gosec // G115: small member id
+		}
+		c.members[id] = m
+	}
+	if opts.Faults {
+		c.tickFaults()
 	}
 	t.Cleanup(c.stopAll)
 	for _, id := range c.IDs() {
 		c.Start(id)
 	}
 	return c
+}
+
+// tickFaults releases delayed messages every TickInterval until the cluster stops.
+func (c *Cluster) tickFaults() {
+	ctx, cancel := context.WithCancel(context.Background())
+	c.stopTicks, c.ticked = cancel, make(chan struct{})
+	go func() {
+		defer close(c.ticked)
+		tk := clock.Real{}.NewTicker(c.opts.TickInterval)
+		defer tk.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-tk.C():
+				for _, id := range c.IDs() {
+					c.members[id].fault.Tick()
+				}
+			}
+		}
+	}()
+}
+
+// faults returns every member's Fault, failing the test unless Options.Faults is set.
+func (c *Cluster) faults() []*transport.Fault {
+	c.t.Helper()
+	if !c.opts.Faults {
+		c.t.Fatal("kvtest: fault injection needs Options.Faults")
+	}
+	var out []*transport.Fault
+	for _, id := range c.IDs() {
+		out = append(out, c.members[id].fault)
+	}
+	return out
+}
+
+// Partition splits the members into groups that reach only their own group (both directions);
+// a member in no group reaches nobody. Needs Options.Faults.
+func (c *Cluster) Partition(groups ...[]uint64) {
+	c.t.Helper()
+	for _, f := range c.faults() {
+		f.Partition(groups...)
+	}
+}
+
+// Heal ends any partition and clears the link faults SetFaults set. Needs Options.Faults.
+func (c *Cluster) Heal() {
+	c.t.Helper()
+	for _, f := range c.faults() {
+		f.Heal()
+	}
+}
+
+// SetFaults applies x to every link, for example delays (MaxDelayTicks × TickInterval). Needs
+// Options.Faults.
+func (c *Cluster) SetFaults(x transport.Faults) {
+	c.t.Helper()
+	for _, f := range c.faults() {
+		f.SetDefault(x)
+	}
+}
+
+// Backup copies stopped member id's storage (snapshot, log and hard state), as a copy of its data
+// directory would.
+func (c *Cluster) Backup(id uint64) *storage.Mem {
+	c.t.Helper()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	m := c.members[id]
+	if m.running {
+		c.t.Fatalf("kvtest: back up %d while it runs", id)
+	}
+	cp, err := clone(m.st)
+	if err != nil {
+		c.t.Fatalf("kvtest: back up %d: %v", id, err)
+	}
+	return cp
+}
+
+// Restore replaces stopped member id's storage with a copy of st, as restoring an old copy of its
+// data directory would; the next Start runs on it.
+func (c *Cluster) Restore(id uint64, st *storage.Mem) {
+	c.t.Helper()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	m := c.members[id]
+	if m.running {
+		c.t.Fatalf("kvtest: restore %d while it runs", id)
+	}
+	cp, err := clone(st)
+	if err != nil {
+		c.t.Fatalf("kvtest: restore %d: %v", id, err)
+	}
+	m.st = cp
+}
+
+// clone copies src in one write: its snapshot, the log after it, and the hard state. Entries a
+// compaction kept before the snapshot are not copied; the snapshot covers them.
+func clone(src *storage.Mem) (*storage.Mem, error) {
+	snap, err := src.Snapshot()
+	if err != nil {
+		return nil, err
+	}
+	hs, _, err := src.InitialState()
+	if err != nil {
+		return nil, err
+	}
+	first, _ := src.FirstIndex() // Mem never fails these
+	last, _ := src.LastIndex()
+	var ents []*raftpb.Entry
+	if last >= first {
+		if ents, err = src.Entries(first, last+1, math.MaxUint64); err != nil {
+			return nil, err
+		}
+	}
+	dst := storage.NewMem()
+	if err := dst.Save(hs, ents, snap); err != nil {
+		return nil, fmt.Errorf("copy storage: %w", err)
+	}
+	return dst, nil
 }
 
 // IDs returns the member ids, ascending.
@@ -183,10 +356,14 @@ func (c *Cluster) start(m *member) error {
 		return err
 	}
 	f := fsm.New(fsm.Options{})
+	var st storage.Storage = m.st
+	if c.opts.WrapStorage != nil {
+		st = c.opts.WrapStorage(m.ID, st)
+	}
 	n, err := node.New(node.Config{
 		ID: m.ID, Peers: c.peers, TickInterval: c.opts.TickInterval, SnapshotEntries: c.opts.SnapshotEntries,
 		SnapshotTrailing: c.opts.SnapshotTrailing, Logger: c.opts.Logger, Metrics: nm,
-	}, m.st, fsm.NewApplier(f))
+	}, st, fsm.NewApplier(f))
 	if err != nil {
 		return err
 	}
@@ -197,7 +374,7 @@ func (c *Cluster) start(m *member) error {
 		peers[p.ID] = p.Addr
 	}
 	srv, err := server.New(server.Config{
-		NodeID: m.ID, Members: members, Clock: c.opts.Clock, ProposalTimeout: c.opts.ProposalTimeout,
+		NodeID: m.ID, Members: members, Clock: c.clockOf(m.ID), ProposalTimeout: c.opts.ProposalTimeout,
 		SweepInterval: c.opts.SweepInterval, Logger: c.opts.Logger, Metrics: sm, AdminToken: c.opts.AdminToken,
 	}, n, f)
 	if err != nil {
@@ -211,7 +388,13 @@ func (c *Cluster) start(m *member) error {
 	tr.Register(gs)
 	srv.Register(gs)
 	go func(lis net.Listener) { _ = gs.Serve(lis) }(m.lis) // returns when Kill stops gs
-	if err := n.Start(tr); err != nil {
+	var send node.Transport = tr
+	if m.fault != nil {
+		m.curTr.Store(tr)
+		m.curNod.Store(n)
+		send = m.fault
+	}
+	if err := n.Start(send); err != nil {
 		gs.Stop()
 		tr.Close()
 		return err
@@ -255,6 +438,8 @@ func (c *Cluster) kill(m *member) {
 	}
 	m.cancel()
 	<-m.swept
+	m.curTr.Store(nil) // the fault forwards to nothing until the next Start
+	m.curNod.Store(nil)
 	m.gs.Stop() // closes the listener too
 	m.Node.Stop()
 	m.tr.Close()
@@ -274,7 +459,21 @@ func (c *Cluster) Wipe(id uint64) {
 	m.st = storage.NewMem()
 }
 
+// clockOf is member id's clock: Options.MemberClock's, else Options.Clock.
+func (c *Cluster) clockOf(id uint64) clock.Clock {
+	if c.opts.MemberClock != nil {
+		if clk := c.opts.MemberClock(id); clk != nil {
+			return clk
+		}
+	}
+	return c.opts.Clock
+}
+
 func (c *Cluster) stopAll() {
+	if c.stopTicks != nil {
+		c.stopTicks()
+		<-c.ticked
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for _, m := range c.members {
