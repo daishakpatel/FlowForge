@@ -1,5 +1,5 @@
 # Local development stack (task 01.02). Credentials are dev-only constants (00C §10.4).
-# Profiles: core = postgres; streaming = timescaledb (Kafka joins in 05.01); ai = postgres for aiops;
+# Profiles: core = postgres; streaming = timescaledb + kafka (05.01); ai = postgres for aiops;
 # raft = the 3-node Raft KV (04.06), plus with core the Raft-coordinated control plane (04.07);
 # ui and obs are reserved for later tasks; full = everything. Map: docs/development.md.
 # Image tags are pinned; keep them in step with internal/testutil and docs/decisions/versions.md.
@@ -41,6 +41,42 @@ services:
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U md -d marketdata"]
       interval: 2s
       timeout: 3s
+      retries: 30
+
+  # Single-broker Kafka in KRaft mode (task 05.01, ADR-010): broker and controller in one process.
+  # Containers use kafka:9092; the host uses localhost:19092 (FF_KAFKA_BROKERS for host-run tools,
+  # `make topics`). Topics are never auto-created: `make topics` creates them from
+  # deploy/kafka/topics.yaml, so a misspelt topic fails loudly. Map: docs/architecture/event-schemas.md.
+  kafka:
+    image: apache/kafka:4.1.1
+    profiles: [streaming, full]
+    environment:
+      CLUSTER_ID: jsq7OiQxTLqUvo-UVS4p0A # fixed (kafka-storage.sh random-uuid), so the data volume survives restarts
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: INTERNAL://:9092,EXTERNAL://:19092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:${FF_DEV_KAFKA_PORT:-19092}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+    ports:
+      - "127.0.0.1:${FF_DEV_KAFKA_PORT:-19092}:19092"
+    volumes:
+      - kafkadata:/var/lib/kafka/data
+    healthcheck:
+      # Ready once the broker answers an API-versions request on its in-network listener.
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      start_period: 10s
       retries: 30
 
   # 3-node Raft KV (task 04.06): static peers on the internal network. The client port 7000 is
@@ -207,6 +243,7 @@ services:
 volumes:
   pgdata:
   mddata:
+  kafkadata:
   raft1data:
   raft2data:
   raft3data:

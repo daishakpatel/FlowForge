@@ -1,0 +1,60 @@
+# Kafka topics (00E §7, task 05.01), the input of `make topics` (flowforgectl topics ensure).
+# Missing topics are created. An existing topic is never changed: a different partition count,
+# replication factor or config is reported as a warning, because adding partitions moves keys to
+# other partitions (breaking per-key order) and a topic is never shrunk. Change one deliberately,
+# with the kafka-topics/kafka-configs tools, and update this file and 00E §7 with it.
+# Replication factor 1 is for the single dev broker. Rationale: docs/architecture/event-schemas.md.
+topics:
+  - name: market.ticks
+    key: symbol
+    purpose: validated ticks (market_tick.v1); a symbol stays on one partition, in order
+    partitions: 6
+    replication_factor: 1
+    configs:
+      cleanup.policy: delete
+      retention.ms: "604800000" # 7 d: replay window (05.07)
+
+  - name: market.invalid
+    key: event_id or symbol
+    purpose: DLQ for rejected market events (market_invalid.v1, reason header)
+    partitions: 3
+    replication_factor: 1
+    configs:
+      cleanup.policy: delete
+      retention.ms: "1209600000" # 14 d: time to inspect and replay rejects
+
+  - name: market.aggregates
+    key: symbol
+    purpose: emitted window aggregates (market_aggregate.v1), informational
+    partitions: 6
+    replication_factor: 1
+    configs:
+      cleanup.policy: compact,delete # the latest aggregate per key survives compaction, all expire after 7 d
+      retention.ms: "604800000" # 7 d
+
+  - name: flowforge.workflow-events
+    key: run_id
+    purpose: run, approval, worker and scheduler events from the outbox relay (flowforge_event.v1)
+    partitions: 3
+    replication_factor: 1
+    configs:
+      cleanup.policy: delete
+      retention.ms: "604800000" # 7 d
+
+  - name: flowforge.task-events
+    key: run_id
+    purpose: task and attempt events from the outbox relay (flowforge_event.v1), keyed by run for order
+    partitions: 3
+    replication_factor: 1
+    configs:
+      cleanup.policy: delete
+      retention.ms: "604800000" # 7 d
+
+  - name: flowforge.dlq
+    key: run_id
+    purpose: outbox events the relay could not publish after its retries (05.08)
+    partitions: 3
+    replication_factor: 1
+    configs:
+      cleanup.policy: delete
+      retention.ms: "1209600000" # 14 d
