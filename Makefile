@@ -18,7 +18,7 @@ LDFLAGS               := -X $(MODULE)/internal/version.version=$(VERSION) -X $(M
 COVER_PROFILE         := coverage.out
 COMPOSE               := docker compose --profile core --profile streaming
 
-.PHONY: help build test test-race test-integration test-crash test-e2e lint lint-selftest fmt tidy cover cover-check proto proto-check proto-breaking sqlc sqlc-check migrate-up migrate-status openapi-check clean dev-up dev-down dev-reset psql psql-md logs raft-up raft-down raft-status raft-logs raft-kill raft-restart test-e2e-raft failover-up failover-down
+.PHONY: help build test test-race test-integration test-crash test-e2e lint lint-selftest test-fault-raft fmt tidy cover cover-check proto proto-check proto-breaking sqlc sqlc-check migrate-up migrate-status openapi-check clean dev-up dev-down dev-reset psql psql-md logs raft-up raft-down raft-status raft-logs raft-kill raft-restart test-e2e-raft failover-up failover-down
 
 help: ## List targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-18s %s\n", $$1, $$2}'
@@ -45,9 +45,21 @@ test-e2e: ## Workflow-engine end-to-end suite: real binaries as subprocesses + P
 test-e2e-raft: ## The same suite with FF_COORDINATION=raft: a 3-node flowforge-raft cluster per test (04.07)
 	FF_E2E_COORDINATION=raft go test -count=1 -timeout=30m -tags=e2e -v ./test/e2e/
 
+# Raft fault-injection suite (04.08). FAULT_RUNS consecutive runs; the container-level scenarios
+# join with FF_FAULT_CONTAINERS=1 (Docker; nightly). The report is rendered even when a scenario
+# fails, so the failure is recorded; the target still fails.
+FAULT_RUNS    ?= 5
+FAULT_TIMEOUT ?= 90m
+FAULT_RESULTS := $(CURDIR)/bin/raft-fault-results.jsonl
+
+test-fault-raft: ## Raft fault scenarios (tag fault) x FAULT_RUNS, then render docs/testing/raft-fault-report.md
+	@mkdir -p bin && rm -f $(FAULT_RESULTS)
+	@FF_FAULT_RESULTS=$(FAULT_RESULTS) go test -count=$(FAULT_RUNS) -timeout=$(FAULT_TIMEOUT) -tags=fault -run 'TestFault_' -v ./test/fault/raft/; \
+		status=$$?; go run ./scripts/chaos -in $(FAULT_RESULTS) -runs $(FAULT_RUNS) -notes docs/testing/raft-fault-notes.md && exit $$status
+
 lint: ## golangci-lint (formatters + linters, incl. boundary rules)
 	@golangci-lint --version | grep -q " $(GOLANGCI_LINT_VERSION) " || echo "lint: warning: expected golangci-lint $(GOLANGCI_LINT_VERSION) (see docs/decisions/versions.md)"
-	golangci-lint run --build-tags=integration,e2e ./...
+	golangci-lint run --build-tags=integration,e2e,fault ./...
 
 lint-selftest: ## Prove the depguard and forbidigo boundary rules fire
 	scripts/dev/lint-selftest.sh

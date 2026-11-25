@@ -56,6 +56,20 @@ jobs:
       - run: make test-crash
       - run: make openapi-check
 
+  # The Raft fault suite's in-process scenarios, once (04.08); the nightly workflow runs them 5
+  # times with the container-level ones. Scenarios 12 and X3 use Postgres in Docker.
+  fault-raft:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FF_TEST_REQUIRE_DOCKER: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: make test-fault-raft FAULT_RUNS=1 FAULT_TIMEOUT=25m # below the job timeout: a hang dumps goroutines
+
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 30 # above go test -timeout=20m, so a hang dumps goroutines and logs upload
