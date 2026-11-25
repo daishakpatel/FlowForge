@@ -41,6 +41,14 @@ for pkg in time math/rand; do
     status=1
   fi
 done
+for pkg in net math/rand; do
+  if grep -q "stream/domain/violation.go.*import '$pkg' .*stream-domain-pure.*(depguard)" <<<"$out"; then
+    echo "lint-selftest: ok   depguard keeps $pkg out of the stream domain"
+  else
+    echo "lint-selftest: FAIL depguard did not keep $pkg out of the stream domain"
+    status=1
+  fi
+done
 if [[ $status -ne 0 ]]; then
   printf '%s\n' "$out"
 fi

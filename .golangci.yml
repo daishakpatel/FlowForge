@@ -98,6 +98,24 @@ linters:
               desc: the stream domain is pure (00C §8.1)
             - pkg: github.com/twmb/franz-go
               desc: the stream domain is pure (00C §8.1)
+        stream-domain-pure:
+          # 05.02: the market-data domain's non-test code does no I/O and imports no FlowForge
+          # package, so the same ticks always give the same aggregates, live or replayed (00C §8.1).
+          # time.Now is banned everywhere by forbidigo; its tests may use a seeded math/rand.
+          files:
+            - "**/internal/stream/domain/**"
+            - "!$test"
+          deny:
+            - pkg: net
+              desc: the stream domain is pure, no network (00C §8.1)
+            - pkg: os
+              desc: the stream domain is pure, no OS state (00C §8.1)
+            - pkg: math/rand
+              desc: the stream domain is deterministic, no randomness (00C §8.1)
+            - pkg: crypto/rand
+              desc: the stream domain is deterministic, no randomness (00C §8.1)
+            - pkg: github.com/daishakpatel/flowforge
+              desc: the stream domain imports no FlowForge package (00C §8.1)
         api:
           files:
             - "**/internal/api/**"
