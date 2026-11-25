@@ -333,3 +333,28 @@ func TestCLI_RunsWatchCountsFailuresInARow(t *testing.T) {
 		t.Errorf("exit %d after %d connections, stderr %q", code, n, stderr)
 	}
 }
+
+// TestCLI_TopicsEnsureRejectsBadInputWithoutDialing covers the paths that fail before any broker
+// is contacted; the run against a real broker is in topics_integration_test.go.
+func TestCLI_TopicsEnsureRejectsBadInputWithoutDialing(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		args []string
+		env  map[string]string
+		code int
+		msg  string
+	}{
+		{[]string{"topics", "ensure", "--nope"}, nil, 2, "usage"},
+		{[]string{"topics", "ensure", "extra"}, nil, 2, "usage"},
+		{[]string{"topics", "ensure"}, map[string]string{"FF_KAFKA_SECURITY_PROTOCOL": "SSL"}, 1, "FF_KAFKA_SECURITY_PROTOCOL"},
+		{[]string{"topics", "ensure"}, map[string]string{"FF_KAFKA_BROKERS": "not an address"}, 1, "FF_KAFKA_BROKERS"},
+		{[]string{"topics", "ensure", "-f", "testdata/missing.yaml"}, nil, 1, "open topics file"},
+	}
+	for _, tc := range cases {
+		var out, errb bytes.Buffer
+		code := run(t.Context(), tc.args, func(k string) string { return tc.env[k] }, &out, &errb)
+		if code != tc.code || !strings.Contains(errb.String(), tc.msg) {
+			t.Errorf("%v %v: exit %d, stderr %q; want %d and %q", tc.args, tc.env, code, errb.String(), tc.code, tc.msg)
+		}
+	}
+}

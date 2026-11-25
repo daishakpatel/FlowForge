@@ -16,9 +16,11 @@ VERSION               ?= $(shell git describe --tags --always --dirty 2>/dev/nul
 COMMIT                ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 LDFLAGS               := -X $(MODULE)/internal/version.version=$(VERSION) -X $(MODULE)/internal/version.commit=$(COMMIT)
 COVER_PROFILE         := coverage.out
-COMPOSE               := docker compose --profile core --profile streaming
+PROFILE               := core streaming# override on the command line (make dev-up PROFILE=streaming), not from the environment
+COMPOSE               := docker compose $(addprefix --profile ,$(PROFILE))
+KAFKA_TOPICS_FILE     ?= deploy/kafka/topics.yaml
 
-.PHONY: help build test test-race test-integration test-crash test-e2e lint lint-selftest test-fault-raft fmt tidy cover cover-check proto proto-check proto-breaking sqlc sqlc-check migrate-up migrate-status openapi-check clean dev-up dev-down dev-reset psql psql-md logs raft-up raft-down raft-status raft-logs raft-kill raft-restart test-e2e-raft failover-up failover-down
+.PHONY: help build test test-race test-integration test-crash test-e2e lint lint-selftest test-fault-raft fmt tidy cover cover-check proto proto-check proto-breaking sqlc sqlc-check migrate-up migrate-status openapi-check clean dev-up dev-down dev-reset psql psql-md logs topics raft-up raft-down raft-status raft-logs raft-kill raft-restart test-e2e-raft failover-up failover-down
 
 help: ## List targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-18s %s\n", $$1, $$2}'
@@ -113,7 +115,7 @@ openapi-check: ## Validate the OpenAPI spec, check route parity, run contract te
 clean: ## Remove build and coverage output
 	rm -rf bin $(COVER_PROFILE)
 
-dev-up: ## Start postgres + timescaledb (profiles core, streaming) and wait until healthy
+dev-up: ## Start postgres, timescaledb and kafka (profiles core, streaming; PROFILE=streaming for one) and wait until healthy
 	$(COMPOSE) up -d --wait
 
 dev-down: ## Stop the dev databases (data is kept)
@@ -131,6 +133,11 @@ psql-md: ## psql into marketdata
 
 logs: ## Follow the dev stack's logs
 	$(COMPOSE) logs -f
+
+# Kafka topics from deploy/kafka/topics.yaml (05.01): creates missing ones, only warns about
+# differences, never changes or shrinks a topic. Default broker: Compose's host listener.
+topics: ## Create the Kafka topics in deploy/kafka/topics.yaml that do not exist (idempotent; needs `make dev-up`)
+	FF_KAFKA_BROKERS=$${FF_KAFKA_BROKERS:-localhost:$${FF_DEV_KAFKA_PORT:-19092}} go run ./cmd/flowforgectl topics ensure -f $(KAFKA_TOPICS_FILE)
 
 # 3-node Raft KV in Compose (profile raft, task 04.06). Nodes: raft-1..3, clients on 127.0.0.1:7001-7003.
 RAFT_COMPOSE := docker compose --profile raft

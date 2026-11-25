@@ -35,6 +35,7 @@ type env struct {
 	out    printer
 	stdout io.Writer
 	stderr io.Writer
+	getenv func(string) string // the process environment; commands that need more than the API read it
 }
 
 type command func(ctx context.Context, e *env, args []string) error
@@ -66,7 +67,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 	if base == "" {
 		base = defaultAPIURL
 	}
-	e := &env{c: newClient(base, getenv("FF_API_KEY")), out: printer{w: stdout, json: format == "json"}, stdout: stdout, stderr: stderr}
+	e := &env{c: newClient(base, getenv("FF_API_KEY")), out: printer{w: stdout, json: format == "json"}, stdout: stdout, stderr: stderr, getenv: getenv}
 	err = cmd(ctx, e, args[2:])
 	var ue usageError
 	var ae *apiError
@@ -137,5 +138,5 @@ func usage() string {
 	}
 	sort.Strings(names)
 	return "usage: flowforgectl [-o table|json] <command> [args]\ncommands:\n  " + strings.Join(names, "\n  ") +
-		"\nenvironment: FF_API_URL (default " + defaultAPIURL + "), FF_API_KEY\n"
+		"\nenvironment: FF_API_URL (default " + defaultAPIURL + "), FF_API_KEY; topics: FF_KAFKA_BROKERS\n"
 }

@@ -20,6 +20,7 @@ func commands() map[string]command {
 		"triggers create": triggersCreate, "triggers list": triggersList,
 		"triggers enable": triggersSetEnabled(true), "triggers disable": triggersSetEnabled(false),
 		"api-keys create": apiKeysCreate, "api-keys list": apiKeysList, "api-keys revoke": apiKeysRevoke,
+		"topics ensure": topicsEnsure,
 	}
 }
 
