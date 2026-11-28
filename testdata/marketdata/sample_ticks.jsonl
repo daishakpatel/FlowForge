@@ -1,0 +1,8 @@
+{"event_time": "2026-11-02T14:30:00.100Z", "symbol": "ACME", "price": 101.25, "size": 300, "source": "csv", "sequence": 1}
+{"event_time": "2026-11-02T14:30:00.400Z", "symbol": "BOLT", "price": 48.1, "size": 50, "source": "csv", "sequence": 1}
+{"event_time": "2026-11-02T14:30:12Z", "symbol": "ACME", "price": 101.3, "size": 120, "source": "csv", "sequence": 2}
+{"event_time": "2026-11-02T14:30:41.250Z", "symbol": "BOLT", "price": 48.05, "size": 75, "source": "csv", "sequence": 2}
+{"event_time": "2026-11-02T14:31:02Z", "symbol": "ACME", "price": 101.1, "size": 400, "source": "csv", "sequence": 3}
+{"event_time": "2026-11-02T14:31:30.5Z", "symbol": "BRK.B", "price": 412.0, "size": 10, "source": "csv", "sequence": 1}
+{"event_time": "2026-11-02T14:31:59.999Z", "symbol": "BOLT", "price": 48.2, "size": 25, "source": "csv", "sequence": 3}
+{"event_time": "2026-11-02T14:32:05Z", "symbol": "ACME", "price": 100.95, "size": 200, "source": "csv", "sequence": 4, "event_id": "hist-acme-4"}
