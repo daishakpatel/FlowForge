@@ -58,7 +58,7 @@ There is one file per schema version, `schemas/events/<name>.schema.json`, in JS
 | `workflow_run.v1`, `workflow_task.v1`, `workflow_attempt.v1`, `workflow_approval.v1`, `workflow_worker.v1`, `workflow_leader_changed.v1` | The payloads of the `run.*`, `task.*`, `task.attempt.*`, `approval.*`, `worker.*` and `scheduler.leader_changed` events (`internal/events`) |
 | `market_tick.v1` | `market.tick` on `market.ticks` (00E §7); `event_time` ≤ now + 5 s is a domain rule, not in the schema |
 | `market_aggregate.v1` | `market.aggregate` on `market.aggregates`: one window of one symbol (00E §12 `market_aggregates`) |
-| `market_invalid.v1` | `market.invalid` on `market.invalid`: the rejected record (base64), the reason, and its source topic, partition and offset (05.04) |
+| `market_invalid.v1` | `market.invalid` on `market.invalid`: the rejected record (base64) and the reason; the source topic, partition and offset when the processor read it (05.04), absent for a tick the producer rejected before publishing (05.03) |
 
 `internal/events`' `TestRecord_EnvelopesMatchSchema` records every workflow event type and validates the outbox envelope against `flowforge_event.v1`. So the Go structs and the published schemas can't drift apart.
 

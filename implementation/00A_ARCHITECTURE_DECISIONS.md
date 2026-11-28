@@ -401,3 +401,12 @@ Format: Context → Decision → Alternatives considered → Consequences.
   - **Purity is lint-enforced:** depguard `stream-domain-pure` keeps net, os, randomness and every FlowForge package out of `internal/stream/domain`.
 - **Why:** every phase-05 task file (05.02–05.10) is written against these names; exact prices avoid float rounding in stored OHLCV.
 - **Impact:** no data or code depended on the old names. The future-timestamp bound stays 00E §7's 5 s (the task file says 5 min).
+
+### ADR-010 amendment — 05.03 — 2026-11-25
+- **What:**
+  - **`market_invalid.v1` makes `source_topic`, `source_partition` and `source_offset` optional** (with its `schemas/baseline` snapshot). A tick the producer rejects before publishing was on no topic. This edit of a published schema version is a one-time exception to the compatibility rule, **approved by the human** in the 05.03 session, because v1 had no producer or consumer yet.
+  - **Synthetic event ids follow 00E §7**, `sha1(source|symbol|sequence|event_time)` with `event_time` in Unix nanoseconds, over the task file's `sha256(…)[:32]` (human-confirmed).
+  - **New config** `FF_PRODUCER_RATE` and `FF_PRODUCER_HTTP_ADDR` (`config.Producer`, 00E §6). The producer's port is `:8084`.
+  - **The synthetic generator uses integer arithmetic only** (prices in cents), so a seed gives the same stream on every platform.
+- **Why:** producer-side rejects need a valid DLQ record; 00E outranks the task file on the id formula.
+- **Impact:** additive for consumers (fields became optional, none removed). Nothing consumed `market_invalid.v1` before this change.
