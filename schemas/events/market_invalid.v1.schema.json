@@ -2,14 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://flowforge.example/schemas/events/market_invalid.v1.schema.json",
   "title": "Rejected market event, version 1",
-  "description": "Payload of market.invalid events on the market.invalid DLQ: the original record and why it was rejected (05.04). original is the record value, base64-encoded because it may not be JSON.",
+  "description": "Payload of market.invalid events on the market.invalid DLQ: the rejected record and why (05.03, 05.04). original is the record value, base64-encoded because it may not be JSON. source_topic, source_partition and source_offset say where the processor read it; a tick the producer rejected before publishing has none (00A amendment 05.03).",
   "type": "object",
   "required": [
     "reason",
-    "original",
-    "source_topic",
-    "source_partition",
-    "source_offset"
+    "original"
   ],
   "properties": {
     "reason": {
