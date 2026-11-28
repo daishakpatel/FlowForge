@@ -82,6 +82,8 @@ Defaults are dev-only. "—" means there is no default.
 | `FF_KAFKA_BROKERS` | `localhost:9092` | required, addr (each); the Compose broker is `localhost:19092` from the host, `kafka:9092` inside Compose | `Scheduler` (outbox relay), `Worker`, `Processor`, `Kafka` (`flowforgectl topics`, `internal/kafka`) |
 | `FF_KAFKA_CLIENT_ID` | `flowforge` | the client id the broker logs and quotas see; each service sets its own name | `Kafka` |
 | `FF_KAFKA_SECURITY_PROTOCOL` | `PLAINTEXT` | oneof `PLAINTEXT`: a placeholder for TLS and SASL, which task 09.01 adds | `Kafka` |
+| `FF_PRODUCER_RATE` | `100` | positive; ticks per second; `--rate` overrides ([generator](architecture/market-data-generator.md)) | `Producer` |
+| `FF_PRODUCER_HTTP_ADDR` | `:8084` | addr; `/metrics`, `/healthz`, `/readyz` | `Producer` |
 | `FF_WORKER_LEASE_TTL` | `15s` | positive | `API`, `Worker`, `Scheduler` (recovery) |
 | `FF_WORKER_HEARTBEAT` | `5s` | positive, < lease TTL/2 | `API`, `Worker`, `Scheduler` (recovery) |
 | `FF_WORKER_ID` | — | required | `Worker` |

@@ -321,6 +321,8 @@ Election tick 10 × 100 ms = 1 s heartbeat tick 1 (100 ms); `PreVote` and `Check
 | `FF_KAFKA_BROKERS` | `localhost:9092` (Compose: `kafka:9092` in the network, `localhost:19092` from the host; 05.01) | relay, worker, processor, flowforgectl topics |
 | `FF_KAFKA_CLIENT_ID` | `flowforge` (the Kafka client id; services set their own name; 05.01) | Kafka clients (`internal/kafka`) |
 | `FF_KAFKA_SECURITY_PROTOCOL` | `PLAINTEXT` (only value until 09.01 adds TLS and SASL; 05.01) | Kafka clients (`internal/kafka`) |
+| `FF_PRODUCER_RATE` | `100` (ticks per second; `--rate` overrides; 05.03) | producer |
+| `FF_PRODUCER_HTTP_ADDR` | `:8084` (`/metrics`, `/healthz`, `/readyz`; 05.03) | producer |
 | `FF_MD_PG_DSN` | `postgres://md:md@localhost:5433/marketdata?sslmode=disable` | processor, api(analytics), flowforge-migrate |
 | `FF_AI_URL`, `FF_AI_TOKEN` | `http://ai-ops:8000` | worker |
 | `AI_*` (Python: `AI_LLM_PROVIDER=mock|…`, `AI_EMBED_PROVIDER`, `AI_FLOWFORGE_URL`, `AI_FLOWFORGE_TOKEN`, `AI_PROM_URL`, `AI_DB_URL`) | — | ai-ops |
